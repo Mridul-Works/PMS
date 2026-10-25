@@ -6,42 +6,53 @@ import { modeLabel } from "@/lib/constants";
 import { inr, inrShort, parseISODate, prettyDate, shiftMonth, thisMonth, today } from "@/lib/format";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
 
-const COLORS = { labour: "bg-brand-500", material: "bg-sky-500", other: "bg-violet-500" };
+const COLORS = { labour: "bg-brand-500", material: "bg-sky-500", contract: "bg-teal-500", other: "bg-violet-500" };
 
 export default async function Dashboard() {
   const site = (await getCurrentSite())!;
   const t = today();
-  const [totals, todayAtt, activeWorkers, recentPay, recentMat, recentExp] = await Promise.all([
+  const [totals, todayAtt, activeWorkers, recentPay, recentMat, recentExp, upcoming, recentDeal] = await Promise.all([
     getTotals(site.id),
     prisma.attendance.findMany({ where: { siteId: site.id, date: t } }),
     prisma.worker.count({ where: { siteId: site.id, active: true } }),
     prisma.labourPayment.findMany({ where: { siteId: site.id }, include: { worker: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
     prisma.materialPurchase.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
     prisma.expense.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.dealPayment.findMany({ where: { siteId: site.id, status: "PLANNED" }, include: { deal: true }, orderBy: { date: "asc" }, take: 6 }),
+    prisma.dealPayment.findMany({ where: { siteId: site.id, status: "PAID" }, include: { deal: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
   ]);
 
   const budget = site.budget;
   const usedPct = budget > 0 ? (totals.totalCost / budget) * 100 : 0;
-  const pendingDues = totals.labourDue + totals.materialDue;
-  const fundsLeft = totals.fundsIn - totals.cashOut;
+  const pendingDues = totals.labourDue + totals.materialDue + totals.contractDue;
+  const fundsLeft = totals.fundsIn + totals.received - totals.cashOut;
 
   const parts = [
     { key: "labour" as const, label: "Labour", value: totals.labourPaid },
     { key: "material" as const, label: "Materials", value: totals.materialCost },
+    { key: "contract" as const, label: "Contracts", value: totals.contractPaid },
     { key: "other" as const, label: "Other expenses", value: totals.expenseTotal },
   ];
 
   // last 6 months
   const months = Array.from({ length: 6 }, (_, i) => shiftMonth(thisMonth(), i - 5));
   const monthRows = months.map((m) => {
-    const r = totals.monthly.get(m) ?? { labour: 0, material: 0, other: 0 };
-    return { m, ...r, total: r.labour + r.material + r.other };
+    const r = totals.monthly.get(m) ?? { labour: 0, material: 0, contract: 0, other: 0 };
+    return { m, ...r, total: r.labour + r.material + r.contract + r.other };
   });
   const maxMonth = Math.max(1, ...monthRows.map((r) => r.total));
 
   const recent = [
     ...recentPay.map((p) => ({ id: `p${p.id}`, date: p.date, what: `${p.worker.name} – ${p.type === "ADVANCE" ? "advance" : "wages"}`, kind: "Labour", amount: p.amount, mode: p.mode })),
     ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: `${m.material} (${m.quantity} ${m.unit})`, kind: "Material", amount: m.total, mode: m.mode })),
+    ...recentDeal.map((d) => ({
+      id: `d${d.id}`,
+      date: d.date,
+      what: `${d.deal.direction === "PAY" ? "Paid to" : "Received from"} ${d.deal.party}${d.note ? ` – ${d.note}` : ""}`,
+      kind: d.deal.direction === "PAY" ? "Part payment" : "Received",
+      amount: d.amount,
+      mode: d.mode,
+    })),
     ...recentExp.map((e) => ({ id: `e${e.id}`, date: e.date, what: e.description, kind: "Expense", amount: e.amount, mode: e.mode })),
   ]
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
@@ -96,9 +107,19 @@ export default async function Dashboard() {
       </Card>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Pending dues" value={inr(pendingDues)} tone="red" hint={`Labour ${inr(totals.labourDue)} · Suppliers ${inr(totals.materialDue)}`} />
+        <Stat label="Pending dues" value={inr(pendingDues)} tone="red" hint={`Labour ${inr(totals.labourDue)} · Suppliers ${inr(totals.materialDue)} · Contracts ${inr(totals.contractDue)}`} />
         <Stat label="Advance with workers" value={inr(totals.labourAdvance)} tone="orange" hint="paid ahead of work" />
-        <Stat label="Funds put in" value={inr(totals.fundsIn)} tone="blue" hint={<Link href="/investments" className="underline">add funds</Link>} />
+        <Stat
+          label="Funds put in + received"
+          value={inr(totals.fundsIn + totals.received)}
+          tone="blue"
+          hint={
+            <>
+              Funds {inrShort(totals.fundsIn)} · Received {inrShort(totals.received)}
+              {totals.receivable > 0 && <> · <span className="text-emerald-700">{inrShort(totals.receivable)} still to come</span></>}
+            </>
+          }
+        />
         <Stat
           label={fundsLeft >= 0 ? "Funds in hand" : "Spent beyond funds"}
           value={inr(Math.abs(fundsLeft))}
@@ -114,7 +135,7 @@ export default async function Dashboard() {
               <div key={r.m} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
                 <div className="text-[11px] font-medium tabular-nums text-stone-600">{r.total ? inrShort(r.total) : ""}</div>
                 <div className="flex w-full max-w-14 flex-col-reverse overflow-hidden rounded-t-md" style={{ height: `${(r.total / maxMonth) * 85}%` }} title={`${inr(r.total)}`}>
-                  {(["labour", "material", "other"] as const).map((k) =>
+                  {(["labour", "material", "contract", "other"] as const).map((k) =>
                     r[k] > 0 ? <div key={k} className={COLORS[k]} style={{ height: `${(r[k] / r.total) * 100}%` }} /> : null,
                   )}
                 </div>
@@ -132,6 +153,32 @@ export default async function Dashboard() {
             </div>
             {half > 0 && <div className="text-sm text-amber-600">+ {half} half day</div>}
             {todayAtt.length === 0 && activeWorkers > 0 && <div className="mt-1 text-sm text-rose-600">Attendance not marked yet</div>}
+          </Card>
+
+          <Card title="Upcoming installments" action={<Link href="/deals" className="text-xs text-brand-700 hover:underline">Part payments →</Link>}>
+            {upcoming.length === 0 ? (
+              <p className="text-sm text-stone-500">No planned installments.</p>
+            ) : (
+              <ul className="divide-y divide-stone-100 text-sm">
+                {upcoming.map((u) => (
+                  <li key={u.id}>
+                    <Link href={`/deals/${u.dealId}`} className="flex items-center justify-between gap-2 py-2 hover:text-brand-700">
+                      <div>
+                        <div className="font-medium">
+                          {u.deal.direction === "PAY" ? "↑ Pay " : "↓ Receive "}
+                          {u.deal.party}
+                        </div>
+                        <div className={`text-xs ${u.date < t ? "font-semibold text-rose-600" : "text-stone-500"}`}>
+                          {u.date < t ? "Overdue · " : u.date === t ? "Today · " : ""}
+                          {prettyDate(u.date)}
+                        </div>
+                      </div>
+                      <b className={`tabular-nums ${u.deal.direction === "PAY" ? "text-rose-600" : "text-emerald-600"}`}>{inr(u.amount)}</b>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           <Card title="Paid by mode">

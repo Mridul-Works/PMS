@@ -3,13 +3,17 @@ import { workerBalances } from "./calc";
 
 /** All the money numbers for one site. */
 export async function getTotals(siteId: number) {
-  const [workers, attendance, payments, materials, expenses, funds] = await Promise.all([
+  const [workers, attendance, payments, materials, expenses, funds, deals] = await Promise.all([
     prisma.worker.findMany({ where: { siteId }, select: { id: true, dailyWage: true } }),
     prisma.attendance.findMany({ where: { siteId }, select: { workerId: true, status: true, overtime: true } }),
     prisma.labourPayment.findMany({ where: { siteId }, select: { workerId: true, amount: true, mode: true, date: true } }),
-    prisma.materialPurchase.findMany({ where: { siteId }, select: { total: true, paid: true, mode: true, date: true, material: true } }),
+    prisma.materialPurchase.findMany({
+      where: { siteId },
+      select: { total: true, paid: true, mode: true, date: true, material: true, payments: { select: { amount: true, mode: true } } },
+    }),
     prisma.expense.findMany({ where: { siteId }, select: { amount: true, mode: true, date: true, category: true } }),
     prisma.investment.aggregate({ where: { siteId }, _sum: { amount: true } }),
+    prisma.deal.findMany({ where: { siteId }, include: { payments: true } }),
   ]);
 
   const sum = <T,>(arr: T[], f: (x: T) => number) => arr.reduce((s, x) => s + f(x), 0);
@@ -22,27 +26,44 @@ export async function getTotals(siteId: number) {
   const materialPaid = sum(materials, (m) => m.paid);
   const expenseTotal = sum(expenses, (e) => e.amount);
 
+  // part-payment deals
+  const done = (d: (typeof deals)[number]) => sum(d.payments.filter((p) => p.status === "PAID"), (p) => p.amount);
+  const payDeals = deals.filter((d) => d.direction === "PAY");
+  const recvDeals = deals.filter((d) => d.direction === "RECEIVE");
+  const contractPaid = sum(payDeals, done);
+  const contractDue = sum(payDeals, (d) => Math.max(0, d.totalAmount - done(d)));
+  const received = sum(recvDeals, done);
+  const receivable = sum(recvDeals, (d) => Math.max(0, d.totalAmount - done(d)));
+
   // Cost = what the work has cost so far (labour paid + materials bought + expenses)
-  const totalCost = labourPaid + materialCost + expenseTotal;
+  const totalCost = labourPaid + materialCost + expenseTotal + contractPaid;
   // Cash out = money that actually left your pocket
-  const cashOut = labourPaid + materialPaid + expenseTotal;
+  const cashOut = labourPaid + materialPaid + expenseTotal + contractPaid;
 
   const byMode: Record<string, number> = { CASH: 0, GPAY: 0, BANK: 0 };
   for (const p of payments) byMode[p.mode] = (byMode[p.mode] ?? 0) + p.amount;
-  for (const m of materials) byMode[m.mode] = (byMode[m.mode] ?? 0) + m.paid;
+  for (const m of materials) {
+    for (const p of m.payments) byMode[p.mode] = (byMode[p.mode] ?? 0) + p.amount;
+    // older purchases may have a paid amount without payment rows
+    const rest = m.paid - sum(m.payments, (p) => p.amount);
+    if (rest > 0.5) byMode[m.mode] = (byMode[m.mode] ?? 0) + rest;
+  }
+  for (const d of payDeals)
+    for (const p of d.payments) if (p.status === "PAID") byMode[p.mode] = (byMode[p.mode] ?? 0) + p.amount;
   for (const e of expenses) byMode[e.mode] = (byMode[e.mode] ?? 0) + e.amount;
 
   // monthly cost split
-  const monthly = new Map<string, { labour: number; material: number; other: number }>();
-  const bump = (date: string, key: "labour" | "material" | "other", v: number) => {
+  const monthly = new Map<string, { labour: number; material: number; contract: number; other: number }>();
+  const bump = (date: string, key: "labour" | "material" | "contract" | "other", v: number) => {
     const m = date.slice(0, 7);
-    const row = monthly.get(m) ?? { labour: 0, material: 0, other: 0 };
+    const row = monthly.get(m) ?? { labour: 0, material: 0, contract: 0, other: 0 };
     row[key] += v;
     monthly.set(m, row);
   };
   payments.forEach((p) => bump(p.date, "labour", p.amount));
   materials.forEach((m) => bump(m.date, "material", m.total));
   expenses.forEach((e) => bump(e.date, "other", e.amount));
+  payDeals.forEach((d) => d.payments.forEach((p) => p.status === "PAID" && bump(p.date, "contract", p.amount)));
 
   return {
     labourPaid,
@@ -54,6 +75,10 @@ export async function getTotals(siteId: number) {
     expenseTotal,
     totalCost,
     cashOut,
+    contractPaid,
+    contractDue,
+    received,
+    receivable,
     fundsIn: funds._sum.amount ?? 0,
     byMode,
     monthly,

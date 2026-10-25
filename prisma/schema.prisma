@@ -23,6 +23,9 @@ model Site {
   materials  MaterialPurchase[]
   expenses   Expense[]
   investments Investment[]
+  deals       Deal[]
+  dealPayments DealPayment[]
+  materialPayments MaterialPayment[]
 }
 
 model Worker {
@@ -90,6 +93,24 @@ model MaterialPurchase {
   note      String?
   createdAt DateTime @default(now())
 
+  payments MaterialPayment[]
+
+  @@index([siteId, date])
+}
+
+// Each part-payment made against a material bill
+model MaterialPayment {
+  id         Int      @id @default(autoincrement())
+  siteId     Int
+  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  purchaseId Int
+  purchase   MaterialPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  date       String
+  amount     Float
+  mode       String   @default("CASH")
+  note       String?
+  createdAt  DateTime @default(now())
+
   @@index([siteId, date])
 }
 
@@ -119,4 +140,41 @@ model Investment {
   mode      String   @default("BANK")
   note      String?
   createdAt DateTime @default(now())
+}
+
+// An agreed total amount that is paid or received in parts.
+// direction: PAY (we pay: contractor/theka, supplier, service) | RECEIVE (we receive: client, buyer, partner)
+model Deal {
+  id          Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  direction   String   @default("PAY")
+  party       String   // person / company
+  title       String   // what it is for
+  category    String
+  totalAmount Float
+  date        String   // agreement date
+  note        String?
+  createdAt   DateTime @default(now())
+
+  payments DealPayment[]
+
+  @@index([siteId])
+}
+
+// One installment. status: PAID (done) | PLANNED (due on `date`)
+model DealPayment {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  dealId    Int
+  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  date      String
+  amount    Float
+  mode      String   @default("CASH")
+  status    String   @default("PAID")
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([siteId, date])
 }

@@ -4,7 +4,7 @@ import { getCurrentSite } from "@/lib/site";
 import { daysInMonth, inr, inrShort, isMonth, parseISODate, thisMonth, today } from "@/lib/format";
 import { Card, MonthNav, PageHeader, Stat } from "@/components/ui";
 
-type Day = { present: number; half: number; absent: number; labour: number; material: number; other: number };
+type Day = { present: number; half: number; absent: number; labour: number; material: number; other: number; contract: number; received: number; duePay: number; dueRecv: number };
 
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
@@ -12,18 +12,19 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const site = (await getCurrentSite())!;
   const where = { siteId: site.id, date: { startsWith: month } };
 
-  const [att, pays, mats, exps, activeWorkers] = await Promise.all([
+  const [att, pays, mats, exps, activeWorkers, dealPays] = await Promise.all([
     prisma.attendance.findMany({ where, select: { date: true, status: true } }),
     prisma.labourPayment.findMany({ where, select: { date: true, amount: true } }),
     prisma.materialPurchase.findMany({ where, select: { date: true, total: true } }),
     prisma.expense.findMany({ where, select: { date: true, amount: true } }),
     prisma.worker.count({ where: { siteId: site.id, active: true } }),
+    prisma.dealPayment.findMany({ where, select: { date: true, amount: true, status: true, deal: { select: { direction: true } } } }),
   ]);
 
   const days = new Map<string, Day>();
   const get = (d: string) => {
     let v = days.get(d);
-    if (!v) days.set(d, (v = { present: 0, half: 0, absent: 0, labour: 0, material: 0, other: 0 }));
+    if (!v) days.set(d, (v = { present: 0, half: 0, absent: 0, labour: 0, material: 0, other: 0, contract: 0, received: 0, duePay: 0, dueRecv: 0 }));
     return v;
   };
   for (const a of att) {
@@ -35,6 +36,12 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   pays.forEach((p) => (get(p.date).labour += p.amount));
   mats.forEach((m) => (get(m.date).material += m.total));
   exps.forEach((e) => (get(e.date).other += e.amount));
+  for (const p of dealPays) {
+    const d = get(p.date);
+    const pay = p.deal.direction === "PAY";
+    const key = p.status === "PAID" ? (pay ? "contract" : "received") : pay ? "duePay" : "dueRecv";
+    d[key] += p.amount;
+  }
 
   const firstWeekday = parseISODate(`${month}-01`).getDay();
   const cells: (string | null)[] = Array(firstWeekday).fill(null);
@@ -45,7 +52,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const all = [...days.values()];
   const manDays = all.reduce((s, d) => s + d.present + d.half / 2, 0);
   const workingDays = all.filter((d) => d.present + d.half > 0).length;
-  const spent = all.reduce((s, d) => s + d.labour + d.material + d.other, 0);
+  const spent = all.reduce((s, d) => s + d.labour + d.material + d.other + d.contract, 0);
 
   return (
     <>
@@ -68,6 +75,9 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
           <span className="text-brand-700">L = labour paid</span>
           <span className="text-sky-700">M = materials</span>
           <span className="text-violet-700">E = other expenses</span>
+          <span className="text-teal-700">C = part payment made</span>
+          <span className="text-emerald-700">R = received</span>
+          <span className="rounded bg-amber-100 px-1 text-amber-800">⏰ installment due</span>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[640px]">
@@ -105,6 +115,10 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
                         {v.labour > 0 && <div className="text-brand-700">L {inrShort(v.labour)}</div>}
                         {v.material > 0 && <div className="text-sky-700">M {inrShort(v.material)}</div>}
                         {v.other > 0 && <div className="text-violet-700">E {inrShort(v.other)}</div>}
+                        {v.contract > 0 && <div className="text-teal-700">C {inrShort(v.contract)}</div>}
+                        {v.received > 0 && <div className="text-emerald-700">R {inrShort(v.received)}</div>}
+                        {v.duePay > 0 && <div className="rounded bg-amber-100 px-1 text-amber-800">⏰ pay {inrShort(v.duePay)}</div>}
+                        {v.dueRecv > 0 && <div className="rounded bg-emerald-50 px-1 text-emerald-800">⏰ get {inrShort(v.dueRecv)}</div>}
                       </div>
                     )}
                     {!v && !future && activeWorkers > 0 && (

@@ -34,3 +34,24 @@ export function workerBalances(workers: W[], attendance: Att[], payments: Pay[])
   for (const b of map.values()) b.balance = b.earned - b.paid;
   return map;
 }
+
+type DealLike = { totalAmount: number; payments: { amount: number; status: string; date: string }[] };
+
+/** Progress of a deal: what is done, what is planned, what is left. */
+export function dealSummary(d: DealLike, today: string) {
+  const done = d.payments.filter((p) => p.status === "PAID").reduce((s, p) => s + p.amount, 0);
+  const plannedRows = d.payments.filter((p) => p.status === "PLANNED").sort((a, b) => (a.date < b.date ? -1 : 1));
+  const planned = plannedRows.reduce((s, p) => s + p.amount, 0);
+  const remaining = d.totalAmount - done;
+  return {
+    done,
+    planned,
+    remaining,
+    /** part of the remaining amount that has no planned date yet */
+    unplanned: Math.max(0, remaining - planned),
+    pct: d.totalAmount > 0 ? (done / d.totalAmount) * 100 : 0,
+    overdue: plannedRows.filter((p) => p.date < today),
+    nextDue: plannedRows.find((p) => p.date >= today),
+    complete: remaining <= 0.5,
+  };
+}

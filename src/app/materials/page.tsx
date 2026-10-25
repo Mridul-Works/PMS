@@ -1,17 +1,22 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
-import { deleteMaterial, payMaterialDue } from "@/lib/actions";
-import { modeLabel } from "@/lib/constants";
+import { deleteMaterial, deleteMaterialPayment, payMaterialDue } from "@/lib/actions";
+import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
 import { inr, num, prettyDate, today } from "@/lib/format";
 import { Badge, Bar, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { DeleteButton } from "@/components/buttons";
 import { MaterialForm } from "@/components/MaterialForm";
+import { AmountField } from "@/components/AmountField";
 
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ material?: string }> }) {
   const sp = await searchParams;
   const site = (await getCurrentSite())!;
-  const all = await prisma.materialPurchase.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }] });
+  const all = await prisma.materialPurchase.findMany({
+    where: { siteId: site.id },
+    include: { payments: { orderBy: [{ date: "asc" }, { id: "asc" }] } },
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+  });
   const list = sp.material ? all.filter((m) => m.material === sp.material) : all;
 
   const total = all.reduce((s, m) => s + m.total, 0);
@@ -102,16 +107,45 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                           <td className="text-right tabular-nums">{inr(m.rate)}</td>
                           <td className="text-right font-semibold tabular-nums">{inr(m.total)}</td>
                           <td className="text-stone-600">{m.supplier}</td>
-                          <td>
-                            <Badge tone={m.mode}>{modeLabel(m.mode)}</Badge>
-                            {due > 0.5 && (
-                              <form action={payMaterialDue} className="mt-1 flex items-center gap-1">
-                                <input type="hidden" name="id" value={m.id} />
-                                <Badge tone="DUE">{inr(due)} due</Badge>
-                                <input name="amount" type="number" min="1" max={Math.ceil(due)} defaultValue={Math.round(due)} className="w-20 rounded border border-stone-300 px-1 py-0.5 text-xs" />
-                                <button className="rounded bg-stone-800 px-2 py-0.5 text-xs text-white">Pay</button>
-                              </form>
-                            )}
+                          <td className="min-w-52">
+                            <div className="flex items-center gap-1.5 text-xs">
+                              {due > 0.5 ? <Badge tone="DUE">{inr(due)} due</Badge> : <Badge tone="PRESENT">Paid in full</Badge>}
+                              <span className="text-stone-500">{Math.round((m.paid / (m.total || 1)) * 100)}% paid</span>
+                            </div>
+                            <details className="mt-1 text-xs">
+                              <summary className="cursor-pointer text-brand-700">
+                                {due > 0.5 ? "Pay / history" : "History"} ({m.payments.length + (m.paid - m.payments.reduce((a, p) => a + p.amount, 0) > 0.5 ? 1 : 0)})
+                              </summary>
+                              <ul className="mt-1 space-y-0.5">
+                                {m.paid - m.payments.reduce((a, p) => a + p.amount, 0) > 0.5 && (
+                                  <li className="text-stone-600">{prettyDate(m.date)} · {inr(m.paid - m.payments.reduce((a, p) => a + p.amount, 0))} · {modeLabel(m.mode)}</li>
+                                )}
+                                {m.payments.map((p) => (
+                                  <li key={p.id} className="flex items-center justify-between gap-2 text-stone-600">
+                                    <span>{prettyDate(p.date)} · <b>{inr(p.amount)}</b> · {modeLabel(p.mode)}</span>
+                                    <form action={deleteMaterialPayment}>
+                                      <input type="hidden" name="id" value={p.id} />
+                                      <DeleteButton label="✕" confirmText="Remove this payment? The amount becomes due again." />
+                                    </form>
+                                  </li>
+                                ))}
+                              </ul>
+                              {due > 0.5 && (
+                                <form action={payMaterialDue} className="mt-2 space-y-1.5 rounded-lg bg-stone-50 p-2">
+                                  <input type="hidden" name="id" value={m.id} />
+                                  <AmountField key={m.payments.length} name="amount" label="Pay now (₹ or % of bill)" total={m.total} remaining={due} required />
+                                  <div className="flex gap-1">
+                                    <select name="mode" className="rounded border border-stone-300 px-1 py-1">
+                                      {PAYMENT_MODES.map((pm) => (
+                                        <option key={pm.value} value={pm.value}>{pm.label}</option>
+                                      ))}
+                                    </select>
+                                    <input name="date" type="date" defaultValue={today()} className="rounded border border-stone-300 px-1 py-1" />
+                                    <button className="rounded bg-stone-800 px-2 py-1 text-white">Pay</button>
+                                  </div>
+                                </form>
+                              )}
+                            </details>
                           </td>
                           <td className="text-right">
                             <form action={deleteMaterial}>

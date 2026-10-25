@@ -13,6 +13,8 @@ npm run dev        # open http://localhost:3000
 
 Optional: `npm run seed` adds a demo site with sample data to explore.
 
+**Part payments:** for anything with a fixed total that is paid or received in parts (thekedar contract, supplier bill, client payment), use *Part Payments*. Enter the total, pay an advance in ₹ or % (e.g. 20%), plan the rest with due dates, and mark each installment paid when it happens. Material bills also support part payments with full history.
+
 ## What's inside
 
 | Page | What it does |
@@ -23,7 +25,8 @@ Optional: `npm run seed` adds a demo site with sample data to explore.
 | Workers | Daily wage, days worked, earned, paid, balance (due or advance) |
 | Worker page | Personal attendance calendar, payment history, pay / edit |
 | Labour Payments | Daily wage / advance / settlement via Cash, GPay/UPI, Bank – filter by month & mode |
-| Materials | Purchases with qty × rate, supplier, part-payments and supplier dues |
+| Part Payments | Fixed total paid or received in parts (₹ or %), planned installments with due dates, overdue alerts |
+| Materials | Purchases with qty × rate, supplier, part-payments (₹ or %) with history and supplier dues |
 | Other Expenses | Transport, JCB, electricity, permits, etc. |
 | Funds / Investment | Money put into the project (self, partner, loan) and what's left |
 | Sites & Budget | Multiple sites, each with its own budget and data |

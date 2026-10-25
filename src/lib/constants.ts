@@ -68,3 +68,19 @@ export function modeLabel(v: string) {
 export function payTypeLabel(v: string) {
   return LABOUR_PAYMENT_TYPES.find((m) => m.value === v)?.label ?? v;
 }
+
+export const DEAL_DIRECTIONS = [
+  { value: "PAY", label: "We pay (contractor, supplier, service)" },
+  { value: "RECEIVE", label: "We receive (client, buyer, partner)" },
+] as const;
+
+export const DEAL_CATEGORIES_PAY = [
+  "Labour contract (theka)",
+  "Material supplier",
+  "Sub-contractor",
+  "Machinery / equipment",
+  "Architect / Engineer",
+  "Land / Plot",
+  "Other",
+];
+export const DEAL_CATEGORIES_RECEIVE = ["Client / Owner payment", "Flat / Unit booking", "Partner contribution", "Loan disbursement", "Refund", "Other"];

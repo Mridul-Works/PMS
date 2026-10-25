@@ -4,12 +4,14 @@ import { useState } from "react";
 import { addMaterial } from "@/lib/actions";
 import { MATERIALS, PAYMENT_MODES, UNITS } from "@/lib/constants";
 import { SubmitButton } from "./buttons";
+import { AmountField } from "./AmountField";
 
 export function MaterialForm({ today, suppliers }: { today: string; suppliers: string[] }) {
   const [material, setMaterial] = useState(MATERIALS[0].name);
   const [unit, setUnit] = useState(MATERIALS[0].unit);
   const [qty, setQty] = useState("");
   const [rate, setRate] = useState("");
+  const [saved, setSaved] = useState(0); // bump to reset the ₹/% field after saving
   const total = (Number(qty) || 0) * (Number(rate) || 0);
 
   return (
@@ -18,6 +20,7 @@ export function MaterialForm({ today, suppliers }: { today: string; suppliers: s
         await addMaterial(f);
         setQty("");
         setRate("");
+        setSaved((n) => n + 1);
       }}
       className="space-y-3"
     >
@@ -62,10 +65,9 @@ export function MaterialForm({ today, suppliers }: { today: string; suppliers: s
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="label">Amount paid now</span>
-          <input name="paid" type="number" step="any" min="0" placeholder="full" className="input" />
-        </label>
+        <div className="col-span-2">
+          <AmountField key={saved} name="paid" label="Paid now (₹ or %)" total={total} placeholder="empty = paid in full" quick={[0, 20, 25, 50]} />
+        </div>
         <label className="block">
           <span className="label">Paid via</span>
           <select name="mode" className="input">
@@ -98,7 +100,7 @@ export function MaterialForm({ today, suppliers }: { today: string; suppliers: s
           <input name="note" className="input" placeholder="brand, size…" />
         </label>
       </div>
-      <p className="text-xs text-stone-500">Leave “Amount paid now” empty if paid in full. Enter less to track the supplier due.</p>
+      <p className="text-xs text-stone-500">Leave “Paid now” empty if paid in full. Enter part (e.g. 20%) to track the rest as supplier due and pay it later.</p>
       <SubmitButton>Add purchase</SubmitButton>
     </form>
   );

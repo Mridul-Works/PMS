@@ -11,6 +11,7 @@ const NAV = [
   { href: "/attendance", label: "Attendance", icon: "✓" },
   { href: "/workers", label: "Workers", icon: "☺" },
   { href: "/payments", label: "Labour Payments", icon: "₹" },
+  { href: "/deals", label: "Part Payments", icon: "%" },
   { href: "/materials", label: "Materials", icon: "▣" },
   { href: "/expenses", label: "Other Expenses", icon: "◈" },
   { href: "/investments", label: "Funds / Investment", icon: "↗" },

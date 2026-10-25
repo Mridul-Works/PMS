@@ -15,15 +15,15 @@ export default async function InvestmentsPage() {
   ]);
   const bySource = new Map<string, number>();
   for (const i of list) bySource.set(i.source, (bySource.get(i.source) ?? 0) + i.amount);
-  const balance = totals.fundsIn - totals.cashOut;
+  const balance = totals.fundsIn + totals.received - totals.cashOut;
 
   return (
     <>
       <PageHeader title="Funds / Investment" subtitle="Money put into this project – by owner, partners, loans – and how much of it is left" />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Total funds put in" value={inr(totals.fundsIn)} tone="blue" />
-        <Stat label="Total money spent" value={inr(totals.cashOut)} hint="labour paid + materials paid + expenses" />
+        <Stat label="Funds put in + received" value={inr(totals.fundsIn + totals.received)} tone="blue" hint={`Received via part payments: ${inr(totals.received)}`} />
+        <Stat label="Total money spent" value={inr(totals.cashOut)} hint="labour + materials paid + contracts + expenses" />
         <Stat
           label={balance >= 0 ? "Funds remaining" : "Spent beyond funds"}
           value={inr(Math.abs(balance))}
