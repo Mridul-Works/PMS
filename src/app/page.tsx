@@ -1,0 +1,173 @@
+import Link from "next/link";
+import { prisma } from "@/lib/db";
+import { getCurrentSite } from "@/lib/site";
+import { getTotals } from "@/lib/totals";
+import { modeLabel } from "@/lib/constants";
+import { inr, inrShort, parseISODate, prettyDate, shiftMonth, thisMonth, today } from "@/lib/format";
+import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
+
+const COLORS = { labour: "bg-brand-500", material: "bg-sky-500", other: "bg-violet-500" };
+
+export default async function Dashboard() {
+  const site = (await getCurrentSite())!;
+  const t = today();
+  const [totals, todayAtt, activeWorkers, recentPay, recentMat, recentExp] = await Promise.all([
+    getTotals(site.id),
+    prisma.attendance.findMany({ where: { siteId: site.id, date: t } }),
+    prisma.worker.count({ where: { siteId: site.id, active: true } }),
+    prisma.labourPayment.findMany({ where: { siteId: site.id }, include: { worker: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.materialPurchase.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.expense.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+  ]);
+
+  const budget = site.budget;
+  const usedPct = budget > 0 ? (totals.totalCost / budget) * 100 : 0;
+  const pendingDues = totals.labourDue + totals.materialDue;
+  const fundsLeft = totals.fundsIn - totals.cashOut;
+
+  const parts = [
+    { key: "labour" as const, label: "Labour", value: totals.labourPaid },
+    { key: "material" as const, label: "Materials", value: totals.materialCost },
+    { key: "other" as const, label: "Other expenses", value: totals.expenseTotal },
+  ];
+
+  // last 6 months
+  const months = Array.from({ length: 6 }, (_, i) => shiftMonth(thisMonth(), i - 5));
+  const monthRows = months.map((m) => {
+    const r = totals.monthly.get(m) ?? { labour: 0, material: 0, other: 0 };
+    return { m, ...r, total: r.labour + r.material + r.other };
+  });
+  const maxMonth = Math.max(1, ...monthRows.map((r) => r.total));
+
+  const recent = [
+    ...recentPay.map((p) => ({ id: `p${p.id}`, date: p.date, what: `${p.worker.name} – ${p.type === "ADVANCE" ? "advance" : "wages"}`, kind: "Labour", amount: p.amount, mode: p.mode })),
+    ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: `${m.material} (${m.quantity} ${m.unit})`, kind: "Material", amount: m.total, mode: m.mode })),
+    ...recentExp.map((e) => ({ id: `e${e.id}`, date: e.date, what: e.description, kind: "Expense", amount: e.amount, mode: e.mode })),
+  ]
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+    .slice(0, 10);
+
+  const present = todayAtt.filter((a) => a.status === "PRESENT").length;
+  const half = todayAtt.filter((a) => a.status === "HALF").length;
+
+  return (
+    <>
+      <PageHeader title={site.name} subtitle={[site.location, `Started ${prettyDate(site.startDate.toISOString().slice(0, 10))}`].filter(Boolean).join(" · ")}>
+        <Link href="/attendance" className="btn-primary">Mark today&apos;s attendance</Link>
+      </PageHeader>
+
+      {/* Budget */}
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-xs font-medium uppercase tracking-wide text-stone-500">Total invested in construction so far</div>
+            <div className="mt-1 text-4xl font-bold tabular-nums">{inr(totals.totalCost)}</div>
+            <div className="mt-1 text-sm text-stone-500">
+              {budget > 0 ? (
+                <>
+                  of {inr(budget)} budget · <b className={usedPct > 100 ? "text-rose-600" : "text-stone-800"}>{usedPct.toFixed(1)}% used</b> ·{" "}
+                  {budget - totals.totalCost >= 0 ? `${inr(budget - totals.totalCost)} left` : `${inr(totals.totalCost - budget)} over budget`}
+                </>
+              ) : (
+                <Link href="/sites" className="text-brand-700 underline">Set a budget for this site</Link>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm">
+            {parts.map((p) => (
+              <div key={p.key} className="flex items-center gap-2">
+                <span className={`h-3 w-3 rounded-sm ${COLORS[p.key]}`} />
+                <span className="text-stone-600">{p.label}</span>
+                <b className="tabular-nums">{inr(p.value)}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 flex h-4 w-full overflow-hidden rounded-full bg-stone-100">
+          {parts.map((p) => (
+            <div
+              key={p.key}
+              className={COLORS[p.key]}
+              style={{ width: `${(p.value / Math.max(budget, totals.totalCost, 1)) * 100}%` }}
+              title={`${p.label}: ${inr(p.value)}`}
+            />
+          ))}
+        </div>
+      </Card>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Pending dues" value={inr(pendingDues)} tone="red" hint={`Labour ${inr(totals.labourDue)} · Suppliers ${inr(totals.materialDue)}`} />
+        <Stat label="Advance with workers" value={inr(totals.labourAdvance)} tone="orange" hint="paid ahead of work" />
+        <Stat label="Funds put in" value={inr(totals.fundsIn)} tone="blue" hint={<Link href="/investments" className="underline">add funds</Link>} />
+        <Stat
+          label={fundsLeft >= 0 ? "Funds in hand" : "Spent beyond funds"}
+          value={inr(Math.abs(fundsLeft))}
+          tone={fundsLeft >= 0 ? "green" : "red"}
+          hint={`Money spent: ${inr(totals.cashOut)}`}
+        />
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2" title="Monthly spending (last 6 months)">
+          <div className="flex h-56 items-end gap-3">
+            {monthRows.map((r) => (
+              <div key={r.m} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                <div className="text-[11px] font-medium tabular-nums text-stone-600">{r.total ? inrShort(r.total) : ""}</div>
+                <div className="flex w-full max-w-14 flex-col-reverse overflow-hidden rounded-t-md" style={{ height: `${(r.total / maxMonth) * 85}%` }} title={`${inr(r.total)}`}>
+                  {(["labour", "material", "other"] as const).map((k) =>
+                    r[k] > 0 ? <div key={k} className={COLORS[k]} style={{ height: `${(r[k] / r.total) * 100}%` }} /> : null,
+                  )}
+                </div>
+                <div className="text-xs text-stone-500">{parseISODate(`${r.m}-01`).toLocaleDateString("en-IN", { month: "short" })}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <div className="space-y-6">
+          <Card title="Today at site" action={<Link href="/calendar" className="text-xs text-brand-700 hover:underline">Calendar →</Link>}>
+            <div className="text-3xl font-bold tabular-nums">
+              {present}
+              <span className="text-base font-normal text-stone-500"> / {activeWorkers} present</span>
+            </div>
+            {half > 0 && <div className="text-sm text-amber-600">+ {half} half day</div>}
+            {todayAtt.length === 0 && activeWorkers > 0 && <div className="mt-1 text-sm text-rose-600">Attendance not marked yet</div>}
+          </Card>
+
+          <Card title="Paid by mode">
+            <div className="space-y-2 text-sm">
+              {Object.entries(totals.byMode).map(([m, v]) => (
+                <div key={m} className="flex items-center justify-between">
+                  <Badge tone={m}>{modeLabel(m)}</Badge>
+                  <b className="tabular-nums">{inr(v)}</b>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <Card className="mt-6" title="Recent activity">
+        {recent.length === 0 ? (
+          <Empty>Nothing recorded yet. Start by adding workers, materials or expenses.</Empty>
+        ) : (
+          <div className="-m-4 overflow-x-auto">
+            <table className="table">
+              <tbody>
+                {recent.map((r) => (
+                  <tr key={r.id}>
+                    <td className="whitespace-nowrap text-stone-500">{prettyDate(r.date)}</td>
+                    <td><Badge>{r.kind}</Badge></td>
+                    <td>{r.what}</td>
+                    <td><Badge tone={r.mode}>{modeLabel(r.mode)}</Badge></td>
+                    <td className="text-right font-semibold tabular-nums">{inr(r.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}

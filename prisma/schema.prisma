@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A construction site / project. Everything else belongs to a site.
+model Site {
+  id        Int      @id @default(autoincrement())
+  name      String
+  location  String?
+  budget    Float    @default(0)
+  startDate DateTime @default(now())
+  notes     String?
+  createdAt DateTime @default(now())
+
+  workers    Worker[]
+  attendance Attendance[]
+  payments   LabourPayment[]
+  materials  MaterialPurchase[]
+  expenses   Expense[]
+  investments Investment[]
+}
+
+model Worker {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  role      String   @default("Labour") // Mistri, Labour, Helper, Carpenter...
+  dailyWage Float
+  active    Boolean  @default(true)
+  joinedAt  DateTime @default(now())
+  notes     String?
+
+  attendance Attendance[]
+  payments   LabourPayment[]
+}
+
+// One row per worker per day. status: PRESENT | HALF | ABSENT
+model Attendance {
+  id       Int      @id @default(autoincrement())
+  siteId   Int
+  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workerId Int
+  worker   Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date     String   // YYYY-MM-DD
+  status   String
+  overtime Float    @default(0) // extra amount for the day (overtime / bonus)
+
+  @@unique([workerId, date])
+  @@index([siteId, date])
+}
+
+// type: DAILY | ADVANCE | SETTLEMENT     mode: CASH | GPAY | BANK
+model LabourPayment {
+  id       Int      @id @default(autoincrement())
+  siteId   Int
+  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workerId Int
+  worker   Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date     String
+  amount   Float
+  type     String   @default("DAILY")
+  mode     String   @default("CASH")
+  note     String?
+  createdAt DateTime @default(now())
+
+  @@index([siteId, date])
+}
+
+model MaterialPurchase {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date      String
+  material  String   // Sariya, Cement, Brick, Sand ...
+  quantity  Float
+  unit      String   // kg, ton, bag, piece, trolley ...
+  rate      Float
+  total     Float
+  paid      Float    @default(0)
+  mode      String   @default("CASH")
+  supplier  String?
+  billNo    String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([siteId, date])
+}
+
+model Expense {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date      String
+  category  String   // Transport, Machinery, Electricity ...
+  description String
+  amount    Float
+  mode      String   @default("CASH")
+  paidTo    String?
+  createdAt DateTime @default(now())
+
+  @@index([siteId, date])
+}
+
+// Money put INTO the project (owner capital, partner, loan)
+model Investment {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date      String
+  source    String   // who invested
+  amount    Float
+  mode      String   @default("BANK")
+  note      String?
+  createdAt DateTime @default(now())
+}
