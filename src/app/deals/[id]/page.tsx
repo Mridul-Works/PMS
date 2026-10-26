@@ -5,7 +5,8 @@ import { addDealPayment, completeDealPayment, deleteDeal, deleteDealPayment, upd
 import { dealSummary } from "@/lib/calc";
 import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, PAYMENT_MODES, modeLabel } from "@/lib/constants";
 import { inr, prettyDate, today } from "@/lib/format";
-import { Badge, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 import { AmountField } from "@/components/AmountField";
 
@@ -13,10 +14,11 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const deal = await prisma.deal.findUnique({
     where: { id: Number(id) },
-    include: { payments: { orderBy: [{ date: "asc" }, { id: "asc" }] } },
+    include: { payments: { include: { paidBy: true }, orderBy: [{ date: "asc" }, { id: "asc" }] } },
   });
   if (!deal) notFound();
   const t = today();
+  const ctx = await getPartnerContext(deal.siteId);
   const s = dealSummary(deal, t);
   const pay = deal.direction === "PAY";
   const verb = pay ? "Paid" : "Received";
@@ -82,7 +84,10 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
                     {done.map((p) => (
                       <tr key={p.id}>
                         <td className="whitespace-nowrap">{prettyDate(p.date)}</td>
-                        <td><Badge tone={p.mode}>{modeLabel(p.mode)}</Badge></td>
+                        <td className="whitespace-nowrap">
+                          <Badge tone={p.mode}>{modeLabel(p.mode)}</Badge>
+                          <ByTag name={p.paidBy?.name} />
+                        </td>
                         <td className="text-stone-600">{p.note}</td>
                         <td className="text-right font-semibold tabular-nums">{inr(p.amount)}</td>
                         <td className="text-right tabular-nums text-stone-500">{pctOf(p.amount)}</td>
@@ -136,6 +141,14 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
                               <option key={m.value} value={m.value}>{m.label}</option>
                             ))}
                           </select>
+                          {ctx.partners.length > 0 && (
+                            <select name="paidById" defaultValue={p.paidById ? String(p.paidById) : ""} className="rounded border border-stone-300 px-1 py-1 text-xs">
+                              {ctx.partners.map((pt) => (
+                                <option key={pt.id} value={pt.id}>{pay ? "by" : "to"} {pt.name}</option>
+                              ))}
+                              <option value="">project fund</option>
+                            </select>
+                          )}
                           <SubmitButton className="rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white">Mark {verb.toLowerCase()}</SubmitButton>
                         </form>
                         <form action={deleteDealPayment}>
@@ -173,6 +186,12 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
               <Field label="Mode">
                 <Select name="mode" options={PAYMENT_MODES} />
               </Field>
+              <PaidBySelect
+                partners={ctx.partners}
+                defaultId={ctx.defaultId}
+                label={pay ? "Paid by" : "Received by"}
+                fundLabel={pay ? "Project fund (common)" : "Into project fund (common)"}
+              />
               <Field label="Note">
                 <input name="note" className="input" placeholder="e.g. after slab casting" />
               </Field>

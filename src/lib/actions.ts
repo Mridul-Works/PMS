@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { getCurrentSite, SITE_COOKIE } from "./site";
+import { requireAdmin } from "./auth";
 import { isDate, shiftDay, today } from "./format";
 
 // ---------- helpers ----------
@@ -26,6 +27,12 @@ function amountOf(f: FormData, prefix: string, total: number) {
   const amt = unit === "PCT" ? (total * v) / 100 : v;
   return Math.round(amt * 100) / 100;
 }
+
+/** Partner chosen in a "Paid by" dropdown; null = project fund. */
+const paidBy = (f: FormData) => {
+  const n = Number(str(f, "paidById"));
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
 
 async function siteId() {
   const site = await getCurrentSite();
@@ -61,6 +68,7 @@ export async function switchSite(f: FormData) {
 }
 
 export async function deleteSite(f: FormData) {
+  await requireAdmin();
   await prisma.site.delete({ where: { id: numVal(f, "id") } });
   (await cookies()).delete(SITE_COOKIE);
   refresh();
@@ -130,6 +138,7 @@ export async function addLabourPayment(f: FormData) {
       type: str(f, "type") || "DAILY",
       mode: str(f, "mode") || "CASH",
       note: optStr(f, "note"),
+      paidById: paidBy(f),
     },
   });
   refresh();
@@ -169,7 +178,7 @@ export async function addMaterial(f: FormData) {
     },
   });
   if (paid > 0)
-    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: "At purchase" } });
+    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: "At purchase", paidById: paidBy(f) } });
   refresh();
 }
 
@@ -182,7 +191,7 @@ export async function payMaterialDue(f: FormData) {
   if (amount <= 0) return;
   await prisma.$transaction([
     prisma.materialPayment.create({
-      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: optStr(f, "note") },
+      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: optStr(f, "note"), paidById: paidBy(f) },
     }),
     prisma.materialPurchase.update({ where: { id }, data: { paid: m.paid + amount } }),
   ]);
@@ -217,6 +226,7 @@ export async function addExpense(f: FormData) {
       amount,
       mode: str(f, "mode") || "CASH",
       paidTo: optStr(f, "paidTo"),
+      paidById: paidBy(f),
     },
   });
   refresh();
@@ -231,11 +241,14 @@ export async function deleteExpense(f: FormData) {
 export async function addInvestment(f: FormData) {
   const amount = numVal(f, "amount");
   if (!amount) return;
+  const partnerId = paidBy(f);
+  const partner = partnerId ? await prisma.partner.findUnique({ where: { id: partnerId } }) : null;
   await prisma.investment.create({
     data: {
       siteId: await siteId(),
+      paidById: partner?.id ?? null,
       date: dateVal(f),
-      source: str(f, "source") || "Owner",
+      source: partner?.name || str(f, "source") || "Owner",
       amount,
       mode: str(f, "mode") || "BANK",
       note: optStr(f, "note"),
@@ -272,8 +285,9 @@ export async function addDeal(f: FormData) {
   // first payment now (advance) – in rupees or %
   const first = Math.min(totalAmount, amountOf(f, "first", totalAmount));
   const mode = str(f, "mode") || "CASH";
-  const rows: { date: string; amount: number; status: string; mode: string; note?: string }[] = [];
-  if (first > 0) rows.push({ date, amount: first, status: "PAID", mode, note: "Advance" });
+  const by = paidBy(f);
+  const rows: { date: string; amount: number; status: string; mode: string; note?: string; paidById?: number | null }[] = [];
+  if (first > 0) rows.push({ date, amount: first, status: "PAID", mode, note: "Advance", paidById: by });
 
   // optionally split the rest into N planned installments
   const n = Math.min(60, Math.max(0, Math.floor(numVal(f, "planCount"))));
@@ -284,7 +298,7 @@ export async function addDeal(f: FormData) {
     const part = Math.floor((rest / n) * 100) / 100;
     for (let i = 0; i < n; i++) {
       const amount = i === n - 1 ? Math.round((rest - part * (n - 1)) * 100) / 100 : part;
-      if (amount > 0) rows.push({ date: shiftDay(start, i * every), amount, status: "PLANNED", mode, note: `Installment ${i + 1} of ${n}` });
+      if (amount > 0) rows.push({ date: shiftDay(start, i * every), amount, status: "PLANNED", mode, note: `Installment ${i + 1} of ${n}`, paidById: by });
     }
   }
   if (rows.length)
@@ -337,6 +351,7 @@ export async function addDealPayment(f: FormData) {
       mode: str(f, "mode") || "CASH",
       status: str(f, "status") === "PLANNED" ? "PLANNED" : "PAID",
       note: optStr(f, "note"),
+      paidById: paidBy(f),
     },
   });
   await clearPlannedIfSettled(deal.id);
@@ -349,7 +364,7 @@ export async function completeDealPayment(f: FormData) {
   const amount = numVal(f, "amount");
   const p = await prisma.dealPayment.update({
     where: { id },
-    data: { status: "PAID", date: dateVal(f), mode: str(f, "mode") || "CASH", ...(amount > 0 ? { amount } : {}) },
+    data: { status: "PAID", date: dateVal(f), mode: str(f, "mode") || "CASH", paidById: paidBy(f), ...(amount > 0 ? { amount } : {}) },
   });
   await clearPlannedIfSettled(p.dealId);
   refresh();
@@ -357,5 +372,31 @@ export async function completeDealPayment(f: FormData) {
 
 export async function deleteDealPayment(f: FormData) {
   await prisma.dealPayment.delete({ where: { id: numVal(f, "id") } });
+  refresh();
+}
+
+// ---------- partners / investors ----------
+export async function savePartner(f: FormData) {
+  await requireAdmin();
+  const id = numVal(f, "id");
+  const name = str(f, "name");
+  if (!name) return;
+  const userId = numVal(f, "userId") || null;
+  const data = {
+    name,
+    sharePct: Math.max(0, Math.min(100, numVal(f, "sharePct"))),
+    phone: optStr(f, "phone"),
+    userId,
+    active: id ? f.get("active") === "on" : true,
+  };
+  if (id) await prisma.partner.update({ where: { id }, data });
+  else await prisma.partner.create({ data: { ...data, siteId: await siteId() } });
+  refresh();
+}
+
+/** Removing a partner keeps the payments; they become "project fund". */
+export async function deletePartner(f: FormData) {
+  await requireAdmin();
+  await prisma.partner.delete({ where: { id: numVal(f, "id") } });
   refresh();
 }

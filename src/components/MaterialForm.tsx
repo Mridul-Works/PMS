@@ -5,8 +5,19 @@ import { addMaterial } from "@/lib/actions";
 import { MATERIALS, PAYMENT_MODES, UNITS } from "@/lib/constants";
 import { SubmitButton } from "./buttons";
 import { AmountField } from "./AmountField";
+import { PaidBySelect } from "./ui";
 
-export function MaterialForm({ today, suppliers }: { today: string; suppliers: string[] }) {
+export function MaterialForm({
+  today,
+  suppliers,
+  partners,
+  defaultPartnerId,
+}: {
+  today: string;
+  suppliers: string[];
+  partners: { id: number; name: string }[];
+  defaultPartnerId?: number;
+}) {
   const [material, setMaterial] = useState(MATERIALS[0].name);
   const [unit, setUnit] = useState(MATERIALS[0].unit);
   const [qty, setQty] = useState("");
@@ -78,6 +89,9 @@ export function MaterialForm({ today, suppliers }: { today: string; suppliers: s
             ))}
           </select>
         </label>
+        <div className="col-span-2">
+          <PaidBySelect partners={partners} defaultId={defaultPartnerId} />
+        </div>
         <label className="block">
           <span className="label">Supplier</span>
           <input name="supplier" list="suppliers" className="input" />

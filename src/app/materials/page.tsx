@@ -4,7 +4,8 @@ import { getCurrentSite } from "@/lib/site";
 import { deleteMaterial, deleteMaterialPayment, payMaterialDue } from "@/lib/actions";
 import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
 import { inr, num, prettyDate, today } from "@/lib/format";
-import { Badge, Bar, Card, Empty, PageHeader, Stat } from "@/components/ui";
+import { Badge, Bar, ByTag, Card, Empty, PageHeader, Stat } from "@/components/ui";
+import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton } from "@/components/buttons";
 import { MaterialForm } from "@/components/MaterialForm";
 import { AmountField } from "@/components/AmountField";
@@ -12,9 +13,10 @@ import { AmountField } from "@/components/AmountField";
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ material?: string }> }) {
   const sp = await searchParams;
   const site = (await getCurrentSite())!;
+  const ctx = await getPartnerContext(site.id);
   const all = await prisma.materialPurchase.findMany({
     where: { siteId: site.id },
-    include: { payments: { orderBy: [{ date: "asc" }, { id: "asc" }] } },
+    include: { payments: { include: { paidBy: true }, orderBy: [{ date: "asc" }, { id: "asc" }] } },
     orderBy: [{ date: "desc" }, { id: "desc" }],
   });
   const list = sp.material ? all.filter((m) => m.material === sp.material) : all;
@@ -122,7 +124,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                                 )}
                                 {m.payments.map((p) => (
                                   <li key={p.id} className="flex items-center justify-between gap-2 text-stone-600">
-                                    <span>{prettyDate(p.date)} · <b>{inr(p.amount)}</b> · {modeLabel(p.mode)}</span>
+                                    <span>{prettyDate(p.date)} · <b>{inr(p.amount)}</b> · {modeLabel(p.mode)}<ByTag name={p.paidBy?.name} /></span>
                                     <form action={deleteMaterialPayment}>
                                       <input type="hidden" name="id" value={p.id} />
                                       <DeleteButton label="✕" confirmText="Remove this payment? The amount becomes due again." />
@@ -134,6 +136,14 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                                 <form action={payMaterialDue} className="mt-2 space-y-1.5 rounded-lg bg-stone-50 p-2">
                                   <input type="hidden" name="id" value={m.id} />
                                   <AmountField key={m.payments.length} name="amount" label="Pay now (₹ or % of bill)" total={m.total} remaining={due} required />
+                                  {ctx.partners.length > 0 && (
+                                    <select name="paidById" defaultValue={ctx.defaultId ? String(ctx.defaultId) : ""} className="w-full rounded border border-stone-300 px-1 py-1">
+                                      {ctx.partners.map((pt) => (
+                                        <option key={pt.id} value={pt.id}>Paid by {pt.name}</option>
+                                      ))}
+                                      <option value="">Paid from project fund</option>
+                                    </select>
+                                  )}
                                   <div className="flex gap-1">
                                     <select name="mode" className="rounded border border-stone-300 px-1 py-1">
                                       {PAYMENT_MODES.map((pm) => (
@@ -165,7 +175,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
 
         <div className="space-y-6">
           <Card title="Add purchase">
-            <MaterialForm today={today()} suppliers={suppliers} />
+            <MaterialForm today={today()} suppliers={suppliers} partners={ctx.partners} defaultPartnerId={ctx.defaultId} />
           </Card>
           {dues.size > 0 && (
             <Card title="Supplier dues">

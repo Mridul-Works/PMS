@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { switchSite } from "@/lib/actions";
+import { logout } from "@/lib/auth-actions";
 
 const NAV = [
   { href: "/", label: "Dashboard", icon: "▦" },
@@ -14,11 +15,20 @@ const NAV = [
   { href: "/deals", label: "Part Payments", icon: "%" },
   { href: "/materials", label: "Materials", icon: "▣" },
   { href: "/expenses", label: "Other Expenses", icon: "◈" },
-  { href: "/investments", label: "Funds / Investment", icon: "↗" },
+  { href: "/investments", label: "Partners & Funds", icon: "↗" },
   { href: "/sites", label: "Sites & Budget", icon: "⌂" },
+  { href: "/users", label: "Users & Login", icon: "⚿" },
 ];
 
-export function Sidebar({ sites, currentId }: { sites: { id: number; name: string }[]; currentId?: number }) {
+export function Sidebar({
+  sites,
+  currentId,
+  user,
+}: {
+  sites: { id: number; name: string }[];
+  currentId?: number;
+  user: { name: string; role: string };
+}) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const active = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -75,6 +85,21 @@ export function Sidebar({ sites, currentId }: { sites: { id: number; name: strin
             </Link>
           ))}
         </nav>
+
+        <div className="mx-3 mb-6 rounded-lg border border-stone-700 p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold text-white">
+              {user.name.slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium text-white">{user.name}</div>
+              <div className="text-[11px] text-stone-400">{user.role === "ADMIN" ? "Admin" : "Member"}</div>
+            </div>
+          </div>
+          <form action={logout} className="mt-2">
+            <button className="w-full rounded-md bg-stone-800 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white">Log out</button>
+          </form>
+        </div>
       </aside>
       {open && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={() => setOpen(false)} />}
     </>

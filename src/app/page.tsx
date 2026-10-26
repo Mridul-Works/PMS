@@ -2,30 +2,32 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
 import { getTotals } from "@/lib/totals";
+import { getPartnerReport } from "@/lib/partners";
 import { modeLabel } from "@/lib/constants";
 import { inr, inrShort, parseISODate, prettyDate, shiftMonth, thisMonth, today } from "@/lib/format";
-import { Badge, Card, Empty, PageHeader, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, PageHeader, Stat } from "@/components/ui";
 
 const COLORS = { labour: "bg-brand-500", material: "bg-sky-500", contract: "bg-teal-500", other: "bg-violet-500" };
 
 export default async function Dashboard() {
   const site = (await getCurrentSite())!;
   const t = today();
-  const [totals, todayAtt, activeWorkers, recentPay, recentMat, recentExp, upcoming, recentDeal] = await Promise.all([
+  const [totals, todayAtt, activeWorkers, recentPay, recentMat, recentExp, upcoming, recentDeal, partners] = await Promise.all([
     getTotals(site.id),
     prisma.attendance.findMany({ where: { siteId: site.id, date: t } }),
     prisma.worker.count({ where: { siteId: site.id, active: true } }),
-    prisma.labourPayment.findMany({ where: { siteId: site.id }, include: { worker: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.labourPayment.findMany({ where: { siteId: site.id }, include: { worker: true, paidBy: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
     prisma.materialPurchase.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
-    prisma.expense.findMany({ where: { siteId: site.id }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.expense.findMany({ where: { siteId: site.id }, include: { paidBy: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
     prisma.dealPayment.findMany({ where: { siteId: site.id, status: "PLANNED" }, include: { deal: true }, orderBy: { date: "asc" }, take: 6 }),
-    prisma.dealPayment.findMany({ where: { siteId: site.id, status: "PAID" }, include: { deal: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    prisma.dealPayment.findMany({ where: { siteId: site.id, status: "PAID" }, include: { deal: true, paidBy: true }, orderBy: [{ date: "desc" }, { id: "desc" }], take: 8 }),
+    getPartnerReport(site.id),
   ]);
 
   const budget = site.budget;
   const usedPct = budget > 0 ? (totals.totalCost / budget) * 100 : 0;
   const pendingDues = totals.labourDue + totals.materialDue + totals.contractDue;
-  const fundsLeft = totals.fundsIn + totals.received - totals.cashOut;
+  const fundsLeft = totals.fundBalance;
 
   const parts = [
     { key: "labour" as const, label: "Labour", value: totals.labourPaid },
@@ -43,8 +45,8 @@ export default async function Dashboard() {
   const maxMonth = Math.max(1, ...monthRows.map((r) => r.total));
 
   const recent = [
-    ...recentPay.map((p) => ({ id: `p${p.id}`, date: p.date, what: `${p.worker.name} – ${p.type === "ADVANCE" ? "advance" : "wages"}`, kind: "Labour", amount: p.amount, mode: p.mode })),
-    ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: `${m.material} (${m.quantity} ${m.unit})`, kind: "Material", amount: m.total, mode: m.mode })),
+    ...recentPay.map((p) => ({ id: `p${p.id}`, date: p.date, what: `${p.worker.name} – ${p.type === "ADVANCE" ? "advance" : "wages"}`, kind: "Labour", amount: p.amount, mode: p.mode, by: p.paidBy?.name })),
+    ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: `${m.material} (${m.quantity} ${m.unit})`, kind: "Material", amount: m.total, mode: m.mode, by: undefined as string | undefined })),
     ...recentDeal.map((d) => ({
       id: `d${d.id}`,
       date: d.date,
@@ -52,8 +54,9 @@ export default async function Dashboard() {
       kind: d.deal.direction === "PAY" ? "Part payment" : "Received",
       amount: d.amount,
       mode: d.mode,
+      by: d.paidBy?.name,
     })),
-    ...recentExp.map((e) => ({ id: `e${e.id}`, date: e.date, what: e.description, kind: "Expense", amount: e.amount, mode: e.mode })),
+    ...recentExp.map((e) => ({ id: `e${e.id}`, date: e.date, what: e.description, kind: "Expense", amount: e.amount, mode: e.mode, by: e.paidBy?.name })),
   ]
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
     .slice(0, 10);
@@ -121,10 +124,10 @@ export default async function Dashboard() {
           }
         />
         <Stat
-          label={fundsLeft >= 0 ? "Funds in hand" : "Spent beyond funds"}
+          label={fundsLeft >= 0 ? "Project fund in hand" : "Fund overspent"}
           value={inr(Math.abs(fundsLeft))}
           tone={fundsLeft >= 0 ? "green" : "red"}
-          hint={`Money spent: ${inr(totals.cashOut)}`}
+          hint={`Spent from fund: ${inr(totals.fundOut)} · total spent ${inr(totals.cashOut)}`}
         />
       </div>
 
@@ -181,6 +184,29 @@ export default async function Dashboard() {
             )}
           </Card>
 
+          {partners.rows.length > 0 && (
+            <Card title="Partners" action={<Link href="/investments" className="text-xs text-brand-700 hover:underline">Details →</Link>}>
+              <div className="space-y-2 text-sm">
+                {partners.rows.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between">
+                    <span>
+                      {r.name}
+                      <span className="ml-1 text-xs text-stone-500">
+                        {partners.totalNet ? `${((r.net / partners.totalNet) * 100).toFixed(0)}%` : ""}
+                      </span>
+                    </span>
+                    <b className="tabular-nums">{inr(r.net)}</b>
+                  </div>
+                ))}
+              </div>
+              {partners.settlements.map((s, i) => (
+                <p key={i} className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                  {s.from} owes {s.to} {inr(s.amount)} to match shares
+                </p>
+              ))}
+            </Card>
+          )}
+
           <Card title="Paid by mode">
             <div className="space-y-2 text-sm">
               {Object.entries(totals.byMode).map(([m, v]) => (
@@ -206,7 +232,10 @@ export default async function Dashboard() {
                     <td className="whitespace-nowrap text-stone-500">{prettyDate(r.date)}</td>
                     <td><Badge>{r.kind}</Badge></td>
                     <td>{r.what}</td>
-                    <td><Badge tone={r.mode}>{modeLabel(r.mode)}</Badge></td>
+                    <td className="whitespace-nowrap">
+                      <Badge tone={r.mode}>{modeLabel(r.mode)}</Badge>
+                      <ByTag name={r.by} />
+                    </td>
                     <td className="text-right font-semibold tabular-nums">{inr(r.amount)}</td>
                   </tr>
                 ))}

@@ -116,3 +116,37 @@ export function Bar({ value, max, color = "bg-brand-500" }: { value: number; max
     </div>
   );
 }
+
+/** "Paid by" dropdown: a partner, or the common project fund. Renders nothing if the site has no partners. */
+export function PaidBySelect({
+  partners,
+  defaultId,
+  label = "Paid by",
+  fundLabel = "Project fund (common)",
+}: {
+  partners: { id: number; name: string }[];
+  defaultId?: number | null;
+  label?: string;
+  fundLabel?: string;
+}) {
+  if (partners.length === 0) return null;
+  return (
+    <label className="block">
+      <span className="label">{label}</span>
+      <select name="paidById" defaultValue={defaultId ? String(defaultId) : ""} className="input">
+        {partners.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+        <option value="">{fundLabel}</option>
+      </select>
+    </label>
+  );
+}
+
+/** Small "by Mridul" tag */
+export function ByTag({ name }: { name?: string | null }) {
+  if (!name) return null;
+  return <span className="ml-1 inline-flex rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-600">by {name}</span>;
+}

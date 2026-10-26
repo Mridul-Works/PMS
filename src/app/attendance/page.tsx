@@ -5,7 +5,8 @@ import { addLabourPayment, deleteLabourPayment } from "@/lib/actions";
 import { dayEarning } from "@/lib/calc";
 import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, modeLabel, payTypeLabel } from "@/lib/constants";
 import { inr, isDate, prettyDate, shiftDay, today } from "@/lib/format";
-import { Badge, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 import { AttendanceSheet } from "@/components/AttendanceSheet";
 
@@ -14,10 +15,11 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const date = isDate(sp.date) ? sp.date! : today();
   const site = (await getCurrentSite())!;
 
-  const [workers, records, payments] = await Promise.all([
+  const [workers, records, payments, ctx] = await Promise.all([
     prisma.worker.findMany({ where: { siteId: site.id }, orderBy: { name: "asc" } }),
     prisma.attendance.findMany({ where: { siteId: site.id, date } }),
-    prisma.labourPayment.findMany({ where: { siteId: site.id, date }, include: { worker: true }, orderBy: { id: "desc" } }),
+    prisma.labourPayment.findMany({ where: { siteId: site.id, date }, include: { worker: true, paidBy: true }, orderBy: { id: "desc" } }),
+    getPartnerContext(site.id),
   ]);
   const recMap = new Map(records.map((r) => [r.workerId, r]));
   // show active workers + anyone who already has a record on this date
@@ -93,6 +95,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                 <Field label="Paid via">
                   <Select name="mode" options={PAYMENT_MODES} />
                 </Field>
+                <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
                 <Field label="Note">
                   <input name="note" className="input" />
                 </Field>
@@ -113,6 +116,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
                       <div className="mt-0.5 flex gap-1">
                         <Badge tone={p.type}>{payTypeLabel(p.type)}</Badge>
                         <Badge tone={p.mode}>{modeLabel(p.mode)}</Badge>
+                        <ByTag name={p.paidBy?.name} />
                       </div>
                     </div>
                     <div className="flex items-center gap-1">

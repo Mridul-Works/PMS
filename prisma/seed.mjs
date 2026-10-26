@@ -11,6 +11,11 @@ const site = await prisma.site.create({
   data: { name: "Demo House – Plot 42", location: "Jaipur", budget: 3500000, startDate: new Date(daysAgo(60)) },
 });
 
+const mridul = await prisma.partner.create({ data: { siteId: site.id, name: "Mridul", sharePct: 60 } });
+const vinay = await prisma.partner.create({ data: { siteId: site.id, name: "Vinay", sharePct: 40 } });
+// who paid: mostly the common fund, sometimes a partner from their own pocket
+const who = () => { const r = Math.random(); return r < 0.6 ? null : r < 0.8 ? mridul.id : vinay.id; };
+
 const people = [
   ["Ramesh", "Mistri (Mason)", 900], ["Suresh", "Labour", 550], ["Mahesh", "Labour", 550],
   ["Raju", "Helper", 500], ["Kallu", "Bar bender", 750], ["Sita", "Labour", 500],
@@ -28,7 +33,7 @@ for (let i = 45; i >= 1; i--) {
     await prisma.attendance.create({ data: { siteId: site.id, workerId: w.id, date, status } });
     if (status !== "ABSENT" && Math.random() < 0.6)
       await prisma.labourPayment.create({
-        data: { siteId: site.id, workerId: w.id, date, amount: status === "HALF" ? w.dailyWage / 2 : w.dailyWage, type: "DAILY", mode: ["CASH", "GPAY", "CASH"][i % 3] },
+        data: { siteId: site.id, workerId: w.id, date, amount: status === "HALF" ? w.dailyWage / 2 : w.dailyWage, type: "DAILY", mode: ["CASH", "GPAY", "CASH"][i % 3], paidById: who() },
       });
   }
 }
@@ -42,9 +47,11 @@ const mats = [
 ];
 for (const [material, quantity, unit, rate, supplier, ago] of mats) {
   const total = quantity * rate;
-  await prisma.materialPurchase.create({
-    data: { siteId: site.id, date: daysAgo(ago), material, quantity, unit, rate, total, paid: ago < 8 ? total * 0.5 : total, supplier, mode: "BANK" },
+  const paid = ago < 8 ? total * 0.5 : total;
+  const p = await prisma.materialPurchase.create({
+    data: { siteId: site.id, date: daysAgo(ago), material, quantity, unit, rate, total, paid, supplier, mode: "BANK" },
   });
+  await prisma.materialPayment.create({ data: { siteId: site.id, purchaseId: p.id, date: daysAgo(ago), amount: paid, mode: "BANK", paidById: who(), note: "At purchase" } });
 }
 
 const exps = [
@@ -53,9 +60,10 @@ const exps = [
   ["Food / Tea", "Tea & snacks for month", 1800, 10], ["Architect / Engineer fees", "Structural drawings", 25000, 55],
 ];
 for (const [category, description, amount, ago] of exps)
-  await prisma.expense.create({ data: { siteId: site.id, date: daysAgo(ago), category, description, amount, mode: ago % 2 ? "CASH" : "GPAY" } });
+  await prisma.expense.create({ data: { siteId: site.id, date: daysAgo(ago), category, description, amount, mode: ago % 2 ? "CASH" : "GPAY", paidById: who() } });
 
-await prisma.investment.create({ data: { siteId: site.id, date: daysAgo(60), source: "Self", amount: 1000000, mode: "BANK" } });
+await prisma.investment.create({ data: { siteId: site.id, date: daysAgo(60), source: "Mridul", paidById: mridul.id, amount: 600000, mode: "BANK" } });
+await prisma.investment.create({ data: { siteId: site.id, date: daysAgo(55), source: "Vinay", paidById: vinay.id, amount: 300000, mode: "BANK" } });
 await prisma.investment.create({ data: { siteId: site.id, date: daysAgo(20), source: "Home loan – SBI", amount: 800000, mode: "BANK" } });
 
 console.log(`Demo site "${site.name}" created.`);

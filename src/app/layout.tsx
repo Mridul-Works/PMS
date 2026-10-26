@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
+import { getCurrentUser } from "@/lib/auth";
 import { Sidebar } from "@/components/Sidebar";
 import { SiteForm } from "@/components/SiteForm";
 
@@ -17,6 +18,15 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const user = await getCurrentUser();
+  // not logged in: only the login page gets here (middleware redirects everything else)
+  if (!user)
+    return (
+      <html lang="en">
+        <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>{children}</body>
+      </html>
+    );
+
   const [sites, current] = await Promise.all([
     prisma.site.findMany({ select: { id: true, name: true }, orderBy: { id: "asc" } }),
     getCurrentSite(),
@@ -25,7 +35,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} font-sans antialiased`}>
-        <Sidebar sites={sites} currentId={current?.id} />
+        <Sidebar sites={sites} currentId={current?.id} user={{ name: user.name, role: user.role }} />
         <main className="min-h-screen lg:pl-64">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
             {current ? (

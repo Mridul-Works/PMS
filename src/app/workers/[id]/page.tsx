@@ -5,7 +5,8 @@ import { addLabourPayment, deleteLabourPayment, deleteWorker, saveWorker } from 
 import { workerBalances } from "@/lib/calc";
 import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, WORKER_ROLES, modeLabel, payTypeLabel } from "@/lib/constants";
 import { daysInMonth, inr, isMonth, parseISODate, prettyDate, thisMonth, today } from "@/lib/format";
-import { Badge, Card, Empty, Field, MonthNav, PageHeader, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, MonthNav, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -28,9 +29,10 @@ export default async function WorkerPage({
   const worker = await prisma.worker.findUnique({ where: { id: Number(id) } });
   if (!worker) notFound();
 
-  const [attendance, payments] = await Promise.all([
+  const [attendance, payments, ctx] = await Promise.all([
     prisma.attendance.findMany({ where: { workerId: worker.id }, orderBy: { date: "asc" } }),
-    prisma.labourPayment.findMany({ where: { workerId: worker.id }, orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    prisma.labourPayment.findMany({ where: { workerId: worker.id }, include: { paidBy: true }, orderBy: [{ date: "desc" }, { id: "desc" }] }),
+    getPartnerContext(worker.siteId),
   ]);
   const all = workerBalances([worker], attendance, payments).get(worker.id)!;
   const monthAtt = attendance.filter((a) => a.date.startsWith(month));
@@ -147,6 +149,7 @@ export default async function WorkerPage({
                   <Select name="mode" options={PAYMENT_MODES} />
                 </Field>
               </div>
+              <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
               <Field label="Note">
                 <input name="note" className="input" placeholder="e.g. advance for 3 days" />
               </Field>
@@ -216,6 +219,7 @@ export default async function WorkerPage({
                     </td>
                     <td>
                       <Badge tone={p.mode}>{modeLabel(p.mode)}</Badge>
+                      <ByTag name={p.paidBy?.name} />
                     </td>
                     <td className="text-stone-600">{p.note}</td>
                     <td className="text-right font-semibold tabular-nums">{inr(p.amount)}</td>

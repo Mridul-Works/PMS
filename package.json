@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "setup": "prisma db push",
+    "setup": "node scripts/setup.mjs && prisma db push",
     "seed": "node prisma/seed.mjs",
     "postinstall": "prisma generate"
   },

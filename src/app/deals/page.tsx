@@ -5,12 +5,14 @@ import { dealSummary } from "@/lib/calc";
 import { inr, prettyDate, today } from "@/lib/format";
 import { Badge, Bar, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { DealForm } from "@/components/DealForm";
+import { getPartnerContext } from "@/lib/partners";
 
 export default async function DealsPage({ searchParams }: { searchParams: Promise<{ dir?: string; show?: string }> }) {
   const sp = await searchParams;
   const dir = sp.dir === "RECEIVE" ? "RECEIVE" : "PAY";
   const t = today();
   const site = (await getCurrentSite())!;
+  const ctx = await getPartnerContext(site.id);
   const deals = await prisma.deal.findMany({
     where: { siteId: site.id },
     include: { payments: true },
@@ -115,7 +117,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
         </Card>
 
         <Card title="New part-payment deal">
-          <DealForm today={t} defaultDirection={dir} key={dir} />
+          <DealForm today={t} defaultDirection={dir} key={dir} partners={ctx.partners} defaultPartnerId={ctx.defaultId} />
         </Card>
       </div>
     </>

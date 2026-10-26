@@ -5,8 +5,19 @@ import { addDeal } from "@/lib/actions";
 import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, PAYMENT_MODES } from "@/lib/constants";
 import { AmountField } from "./AmountField";
 import { SubmitButton } from "./buttons";
+import { PaidBySelect } from "./ui";
 
-export function DealForm({ today, defaultDirection = "PAY" }: { today: string; defaultDirection?: "PAY" | "RECEIVE" }) {
+export function DealForm({
+  today,
+  defaultDirection = "PAY",
+  partners,
+  defaultPartnerId,
+}: {
+  today: string;
+  defaultDirection?: "PAY" | "RECEIVE";
+  partners: { id: number; name: string }[];
+  defaultPartnerId?: number;
+}) {
   const [direction, setDirection] = useState<"PAY" | "RECEIVE">(defaultDirection);
   const [total, setTotal] = useState("");
   const [plan, setPlan] = useState(false);
@@ -72,6 +83,12 @@ export function DealForm({ today, defaultDirection = "PAY" }: { today: string; d
               </select>
             </label>
           </div>
+          <PaidBySelect
+            partners={partners}
+            defaultId={defaultPartnerId}
+            label={pay ? "Paid by" : "Received by"}
+            fundLabel={pay ? "Project fund (common)" : "Into project fund (common)"}
+          />
         </div>
       </div>
 

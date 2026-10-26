@@ -4,19 +4,21 @@ import { getCurrentSite } from "@/lib/site";
 import { addLabourPayment, deleteLabourPayment } from "@/lib/actions";
 import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, modeLabel, payTypeLabel } from "@/lib/constants";
 import { inr, isMonth, prettyDate, thisMonth, today } from "@/lib/format";
-import { Badge, Card, Empty, Field, MonthNav, PageHeader, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, MonthNav, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; mode?: string; type?: string }>;
+  searchParams: Promise<{ month?: string; mode?: string; type?: string; by?: string }>;
 }) {
   const sp = await searchParams;
   const month = isMonth(sp.month) ? sp.month! : thisMonth();
   const site = (await getCurrentSite())!;
 
-  const [workers, payments, allTime] = await Promise.all([
+  const byFilter = sp.by === "fund" ? null : sp.by ? Number(sp.by) : undefined;
+  const [workers, payments, allTime, ctx] = await Promise.all([
     prisma.worker.findMany({ where: { siteId: site.id }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
     prisma.labourPayment.findMany({
       where: {
@@ -24,19 +26,21 @@ export default async function PaymentsPage({
         date: { startsWith: month },
         ...(sp.mode ? { mode: sp.mode } : {}),
         ...(sp.type ? { type: sp.type } : {}),
+        ...(byFilter !== undefined ? { paidById: byFilter } : {}),
       },
-      include: { worker: true },
+      include: { worker: true, paidBy: true },
       orderBy: [{ date: "desc" }, { id: "desc" }],
     }),
     prisma.labourPayment.aggregate({ where: { siteId: site.id }, _sum: { amount: true } }),
+    getPartnerContext(site.id),
   ]);
 
   const total = payments.reduce((s, p) => s + p.amount, 0);
   const byMode = (m: string) => payments.filter((p) => p.mode === m).reduce((s, p) => s + p.amount, 0);
   const advances = payments.filter((p) => p.type === "ADVANCE").reduce((s, p) => s + p.amount, 0);
 
-  const filterLink = (key: "mode" | "type", value?: string) => {
-    const q = new URLSearchParams({ month, ...(sp.mode ? { mode: sp.mode } : {}), ...(sp.type ? { type: sp.type } : {}) });
+  const filterLink = (key: "mode" | "type" | "by", value?: string) => {
+    const q = new URLSearchParams({ month, ...(sp.mode ? { mode: sp.mode } : {}), ...(sp.type ? { type: sp.type } : {}), ...(sp.by ? { by: sp.by } : {}) });
     if (value) q.set(key, value);
     else q.delete(key);
     return `/payments?${q}`;
@@ -47,7 +51,7 @@ export default async function PaymentsPage({
   return (
     <>
       <PageHeader title="Labour Payments" subtitle="Daily wages, advances and settlements paid to workers">
-        <MonthNav month={month} basePath="/payments" params={{ ...(sp.mode ? { mode: sp.mode } : {}), ...(sp.type ? { type: sp.type } : {}) }} />
+        <MonthNav month={month} basePath="/payments" params={{ ...(sp.mode ? { mode: sp.mode } : {}), ...(sp.type ? { type: sp.type } : {}), ...(sp.by ? { by: sp.by } : {}) }} />
       </PageHeader>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -74,6 +78,18 @@ export default async function PaymentsPage({
                 {m.label}
               </Link>
             ))}
+            {ctx.partners.length > 0 && (
+              <>
+                <span className="mx-1 border-l border-stone-200" />
+                <Link href={filterLink("by")} className={chip(!sp.by)}>Anyone</Link>
+                {ctx.partners.map((p) => (
+                  <Link key={p.id} href={filterLink("by", String(p.id))} className={chip(sp.by === String(p.id))}>
+                    by {p.name}
+                  </Link>
+                ))}
+                <Link href={filterLink("by", "fund")} className={chip(sp.by === "fund")}>Project fund</Link>
+              </>
+            )}
           </div>
           {payments.length === 0 ? (
             <Empty>No payments for this month.</Empty>
@@ -101,7 +117,10 @@ export default async function PaymentsPage({
                         </Link>
                       </td>
                       <td><Badge tone={p.type}>{payTypeLabel(p.type)}</Badge></td>
-                      <td><Badge tone={p.mode}>{modeLabel(p.mode)}</Badge></td>
+                      <td className="whitespace-nowrap">
+                        <Badge tone={p.mode}>{modeLabel(p.mode)}</Badge>
+                        <ByTag name={p.paidBy?.name} />
+                      </td>
                       <td className="text-stone-600">{p.note}</td>
                       <td className="text-right font-semibold tabular-nums">{inr(p.amount)}</td>
                       <td className="text-right">
@@ -145,6 +164,7 @@ export default async function PaymentsPage({
                   <Select name="mode" options={PAYMENT_MODES} />
                 </Field>
               </div>
+              <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
               <Field label="Note">
                 <input name="note" className="input" placeholder="UPI ref, advance for 5 days…" />
               </Field>

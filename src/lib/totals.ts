@@ -6,12 +6,12 @@ export async function getTotals(siteId: number) {
   const [workers, attendance, payments, materials, expenses, funds, deals] = await Promise.all([
     prisma.worker.findMany({ where: { siteId }, select: { id: true, dailyWage: true } }),
     prisma.attendance.findMany({ where: { siteId }, select: { workerId: true, status: true, overtime: true } }),
-    prisma.labourPayment.findMany({ where: { siteId }, select: { workerId: true, amount: true, mode: true, date: true } }),
+    prisma.labourPayment.findMany({ where: { siteId }, select: { workerId: true, amount: true, mode: true, date: true, paidById: true } }),
     prisma.materialPurchase.findMany({
       where: { siteId },
-      select: { total: true, paid: true, mode: true, date: true, material: true, payments: { select: { amount: true, mode: true } } },
+      select: { total: true, paid: true, mode: true, date: true, material: true, payments: { select: { amount: true, mode: true, paidById: true } } },
     }),
-    prisma.expense.findMany({ where: { siteId }, select: { amount: true, mode: true, date: true, category: true } }),
+    prisma.expense.findMany({ where: { siteId }, select: { amount: true, mode: true, date: true, category: true, paidById: true } }),
     prisma.investment.aggregate({ where: { siteId }, _sum: { amount: true } }),
     prisma.deal.findMany({ where: { siteId }, include: { payments: true } }),
   ]);
@@ -34,6 +34,19 @@ export async function getTotals(siteId: number) {
   const contractDue = sum(payDeals, (d) => Math.max(0, d.totalAmount - done(d)));
   const received = sum(recvDeals, done);
   const receivable = sum(recvDeals, (d) => Math.max(0, d.totalAmount - done(d)));
+
+  // Project fund (common pool): money in from investments + receipts kept in the fund,
+  // money out only for payments made from the fund (paidById = null). Partners paying from
+  // their own pocket do not touch the fund.
+  const fromFund = <T extends { paidById: number | null }>(arr: T[]) => arr.filter((x) => x.paidById === null);
+  const legacyMaterialPaid = sum(materials, (m) => Math.max(0, m.paid - sum(m.payments, (p) => p.amount)));
+  const fundOut =
+    sum(fromFund(payments), (p) => p.amount) +
+    sum(materials, (m) => sum(fromFund(m.payments), (p) => p.amount)) +
+    legacyMaterialPaid +
+    sum(fromFund(expenses), (e) => e.amount) +
+    sum(payDeals, (d) => sum(fromFund(d.payments.filter((p) => p.status === "PAID")), (p) => p.amount));
+  const fundReceived = sum(recvDeals, (d) => sum(fromFund(d.payments.filter((p) => p.status === "PAID")), (p) => p.amount));
 
   // Cost = what the work has cost so far (labour paid + materials bought + expenses)
   const totalCost = labourPaid + materialCost + expenseTotal + contractPaid;
@@ -80,6 +93,10 @@ export async function getTotals(siteId: number) {
     received,
     receivable,
     fundsIn: funds._sum.amount ?? 0,
+    fundOut,
+    fundReceived,
+    /** money left in the common project fund */
+    fundBalance: (funds._sum.amount ?? 0) + fundReceived - fundOut,
     byMode,
     monthly,
   };

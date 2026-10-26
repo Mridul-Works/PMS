@@ -26,6 +26,7 @@ model Site {
   deals       Deal[]
   dealPayments DealPayment[]
   materialPayments MaterialPayment[]
+  partners    Partner[]
 }
 
 model Worker {
@@ -72,6 +73,8 @@ model LabourPayment {
   mode     String   @default("CASH")
   note     String?
   createdAt DateTime @default(now())
+  paidById  Int?
+  paidBy    Partner? @relation("LabourPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
@@ -110,6 +113,8 @@ model MaterialPayment {
   mode       String   @default("CASH")
   note       String?
   createdAt  DateTime @default(now())
+  paidById  Int?
+  paidBy    Partner? @relation("MaterialPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
@@ -125,6 +130,8 @@ model Expense {
   mode      String   @default("CASH")
   paidTo    String?
   createdAt DateTime @default(now())
+  paidById  Int?
+  paidBy    Partner? @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
@@ -135,11 +142,13 @@ model Investment {
   siteId    Int
   site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   date      String
-  source    String   // who invested
+  source    String   // who invested (name; kept for display)
   amount    Float
   mode      String   @default("BANK")
   note      String?
   createdAt DateTime @default(now())
+  paidById  Int?
+  paidBy    Partner? @relation("InvestmentBy", fields: [paidById], references: [id], onDelete: SetNull)
 }
 
 // An agreed total amount that is paid or received in parts.
@@ -175,6 +184,45 @@ model DealPayment {
   status    String   @default("PAID")
   note      String?
   createdAt DateTime @default(now())
+  // PAY deals: partner who paid. RECEIVE deals: partner who received the money.
+  paidById  Int?
+  paidBy    Partner? @relation("DealPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
+}
+
+// A partner / investor in a site (e.g. Mridul, Vinay). "Paid by" on every payment points here.
+// paidById = null means the money came from the common project fund.
+model Partner {
+  id        Int      @id @default(autoincrement())
+  siteId    Int
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name      String
+  sharePct  Float    @default(0) // agreed share of the total investment, in %
+  phone     String?
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  labourPayments   LabourPayment[]   @relation("LabourPaidBy")
+  materialPayments MaterialPayment[] @relation("MaterialPaidBy")
+  expenses         Expense[]         @relation("ExpensePaidBy")
+  investments      Investment[]      @relation("InvestmentBy")
+  dealPayments     DealPayment[]     @relation("DealPaidBy")
+
+  @@index([siteId])
+}
+
+// Login accounts. role: ADMIN (manage users, sites, partners) | MEMBER (enter data)
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         String   @default("MEMBER")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  partners Partner[]
 }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
+import { getCurrentUser } from "@/lib/auth";
 import { deleteSite, switchSite } from "@/lib/actions";
 import { getTotals } from "@/lib/totals";
 import { inr } from "@/lib/format";
@@ -9,6 +10,7 @@ import { SiteForm } from "@/components/SiteForm";
 
 export default async function SitesPage() {
   const current = (await getCurrentSite())!;
+  const isAdmin = (await getCurrentUser())?.role === "ADMIN";
   const sites = await prisma.site.findMany({ orderBy: { id: "asc" } });
   const totals = await Promise.all(sites.map((s) => getTotals(s.id)));
 
@@ -55,10 +57,12 @@ export default async function SitesPage() {
                     <div className="mt-3">
                       <SiteForm site={s} />
                     </div>
+                    {isAdmin && (
                     <form action={deleteSite} className="mt-4">
                       <input type="hidden" name="id" value={s.id} />
                       <DeleteButton label="Delete this site and ALL its data" confirmText={`Delete "${s.name}" with all workers, attendance, payments, materials and expenses? This cannot be undone.`} />
                     </form>
+                    )}
                   </details>
                 )}
               </Card>
