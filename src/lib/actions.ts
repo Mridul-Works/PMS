@@ -52,7 +52,7 @@ export async function saveSite(f: FormData) {
     location: optStr(f, "location"),
     budget: numVal(f, "budget"),
     notes: optStr(f, "notes"),
-    startDate: isDate(str(f, "startDate")) ? new Date(str(f, "startDate")) : new Date(),
+    startDate: new Date(isDate(str(f, "startDate")) ? str(f, "startDate") : today()),
   };
   const site = id
     ? await prisma.site.update({ where: { id }, data })

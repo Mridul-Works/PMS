@@ -45,4 +45,6 @@ next-env.d.ts
 /prisma/*.db-journal
 !.env.example
 /prisma/*.backup.db
+/prisma/sqlite-backup.db
 /.next-test/
+.neon

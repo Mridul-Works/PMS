@@ -9,9 +9,13 @@
     "lint": "eslint",
     "setup": "node scripts/setup.mjs && prisma db push",
     "seed": "node prisma/seed.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "vercel-build": "prisma generate && prisma db push --skip-generate && next build"
   },
   "dependencies": {
+    "@neon/config": "^1.9.4",
+    "@neon/env": "^1.6.5",
     "@prisma/client": "^6.19.3",
     "next": "15.5.28",
     "prisma": "^6.19.3",

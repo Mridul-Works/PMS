@@ -1,5 +1,5 @@
 import { saveSite } from "@/lib/actions";
-import { toISODate } from "@/lib/format";
+import { today } from "@/lib/format";
 import { Field } from "./ui";
 import { SubmitButton } from "./buttons";
 
@@ -19,7 +19,7 @@ export function SiteForm({ site }: { site?: Site }) {
         <input name="budget" type="number" min="0" step="1" defaultValue={site?.budget || ""} placeholder="e.g. 2500000" className="input" />
       </Field>
       <Field label="Start date">
-        <input name="startDate" type="date" defaultValue={site ? toISODate(site.startDate) : toISODate(new Date())} className="input" />
+        <input name="startDate" type="date" defaultValue={site ? site.startDate.toISOString().slice(0, 10) : today()} className="input" />
       </Field>
       <Field label="Notes" className="sm:col-span-2">
         <textarea name="notes" rows={2} defaultValue={site?.notes ?? ""} className="input" />

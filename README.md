@@ -5,11 +5,26 @@ raw materials (sariya, cement, bricks…), other expenses, funds invested and th
 
 ## Run it
 
+The app uses a **Postgres** database. A free [Neon](https://neon.tech) database works well, locally and on Vercel.
+
+1. Create a project on neon.tech → **Connect** → copy the two connection strings into `.env`
+   (see `.env.example`): `DATABASE_URL` (pooled, host contains `-pooler`) and `DATABASE_URL_UNPOOLED` (direct).
+2. Then:
+
 ```bash
 npm install        # installs packages
-npm run setup      # creates .env (with a random login secret) and the local database
+npm run setup      # adds a random login secret to .env and creates the tables in your database
 npm run dev        # open http://localhost:3000
 ```
+
+## Deploy on Vercel
+
+1. Push this repo to GitHub and import it in Vercel.
+2. In Vercel → *Storage*, add **Neon** (or paste your own) – it sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
+3. In Vercel → *Settings → Environment Variables*, add `AUTH_SECRET` (a new long random string).
+4. Deploy. The `vercel-build` script creates/updates the database tables automatically before each build.
+
+Tip: use a separate Neon *branch* for local development so testing doesn't touch your real data.
 
 The first time you open the app it asks you to **create the admin account**. After that everyone logs in
 with a username and password. The admin adds other users under *Users & Login*.
@@ -43,5 +58,5 @@ contribution vs their share and who should pay whom to settle up.
 **How balances work:** present = full wage, half day = half wage, plus any extra entered.
 Balance = earned − paid. Positive = you owe the worker; negative = advance they've taken.
 
-Data is stored in a local SQLite file (`prisma/dev.db`). Back it up by copying that file.
+Data is stored in your Postgres database (Neon keeps automatic backups / point-in-time restore).
 Keep `.env` private – its `AUTH_SECRET` signs the login sessions (changing it logs everyone out).

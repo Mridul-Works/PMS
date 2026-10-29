@@ -20,7 +20,15 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export function toISODate(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-export const today = () => toISODate(new Date());
+/**
+ * The app's time zone. Servers (e.g. Vercel) run on UTC, so "today" is always worked out in
+ * India time unless APP_TIMEZONE says otherwise.
+ */
+export const APP_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Kolkata";
+const todayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+
+/** Today's date (YYYY-MM-DD) in the app's time zone, no matter where the server runs. */
+export const today = () => todayFmt.format(new Date());
 export const thisMonth = () => today().slice(0, 7);
 
 export function parseISODate(s: string) {
