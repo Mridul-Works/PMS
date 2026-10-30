@@ -47,7 +47,8 @@ export function AmountField({
           placeholder={placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="input min-w-0 flex-1 rounded-r-none"
+          inputMode="decimal"
+          className="input min-h-11 min-w-0 flex-1 rounded-r-none sm:min-h-0"
         />
         <input type="hidden" name={`${name}Unit`} value={unit} />
         <div className="flex shrink-0 overflow-hidden rounded-r-lg border border-l-0 border-stone-300 text-sm">
@@ -60,7 +61,7 @@ export function AmountField({
                 if (u !== unit && n && total) setValue(String(+(u === "PCT" ? (n / total) * 100 : (total * n) / 100).toFixed(2)));
                 setUnit(u);
               }}
-              className={`px-3 font-semibold ${unit === u ? "bg-stone-800 text-white" : "bg-white text-stone-600 hover:bg-stone-50"}`}
+              className={`min-w-11 px-3 font-semibold ${unit === u ? "bg-stone-800 text-white" : "bg-white text-stone-600 hover:bg-stone-50"}`}
             >
               {u === "RS" ? "₹" : "%"}
             </button>
@@ -68,7 +69,7 @@ export function AmountField({
         </div>
       </div>
       {total > 0 && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:gap-1">
           {quick.map((p) => (
             <button
               key={p}
@@ -77,7 +78,7 @@ export function AmountField({
                 setUnit("PCT");
                 setValue(String(p));
               }}
-              className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600 hover:bg-brand-100 hover:text-brand-700"
+              className="min-h-11 rounded-full bg-stone-100 px-3 text-xs font-medium text-stone-600 hover:bg-brand-100 hover:text-brand-700 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-[11px]"
             >
               {p}%
             </button>
@@ -89,7 +90,7 @@ export function AmountField({
                 setUnit("RS");
                 setValue(String(Math.round(remaining * 100) / 100));
               }}
-              className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600 hover:bg-brand-100 hover:text-brand-700"
+              className="min-h-11 rounded-full bg-stone-100 px-3 text-xs font-medium text-stone-600 hover:bg-brand-100 hover:text-brand-700 sm:min-h-0 sm:px-2 sm:py-0.5 sm:text-[11px]"
             >
               Rest {fmt(remaining)}
             </button>

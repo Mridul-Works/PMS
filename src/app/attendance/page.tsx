@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
-import { addLabourPayment, deleteLabourPayment } from "@/lib/actions";
-import { dayEarning } from "@/lib/calc";
-import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, modeLabel, payTypeLabel } from "@/lib/constants";
+import { deleteLabourPayment } from "@/lib/actions";
+import { dayEarning, workerBalances } from "@/lib/calc";
+import { modeLabel, payTypeLabel } from "@/lib/constants";
 import { inr, isDate, prettyDate, shiftDay, today } from "@/lib/format";
-import { Badge, ByTag, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { getPartnerContext } from "@/lib/partners";
-import { DeleteButton, SubmitButton } from "@/components/buttons";
+import { DeleteButton } from "@/components/buttons";
+import { DateNav } from "@/components/DateNav";
+import { PayWorker } from "@/components/PayWorker";
 import { AttendanceSheet } from "@/components/AttendanceSheet";
 
 export default async function AttendancePage({ searchParams }: { searchParams: Promise<{ date?: string }> }) {
@@ -15,12 +17,15 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const date = isDate(sp.date) ? sp.date! : today();
   const site = (await getCurrentSite())!;
 
-  const [workers, records, payments, ctx] = await Promise.all([
+  const [workers, records, payments, ctx, allAtt, allPay] = await Promise.all([
     prisma.worker.findMany({ where: { siteId: site.id }, orderBy: { name: "asc" } }),
     prisma.attendance.findMany({ where: { siteId: site.id, date } }),
     prisma.labourPayment.findMany({ where: { siteId: site.id, date }, include: { worker: true, paidBy: true }, orderBy: { id: "desc" } }),
     getPartnerContext(site.id),
+    prisma.attendance.findMany({ where: { siteId: site.id }, select: { workerId: true, status: true, overtime: true } }),
+    prisma.labourPayment.findMany({ where: { siteId: site.id }, select: { workerId: true, amount: true } }),
   ]);
+  const bal = workerBalances(workers, allAtt, allPay);
   const recMap = new Map(records.map((r) => [r.workerId, r]));
   // show active workers + anyone who already has a record on this date
   const rows = workers
@@ -39,10 +44,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
         <Link href={`/attendance?date=${shiftDay(date, -1)}`} className="btn-ghost">
           ‹ Prev
         </Link>
-        <form className="flex gap-2">
-          <input type="date" name="date" defaultValue={date} className="input w-auto" />
-          <button className="btn-ghost">Go</button>
-        </form>
+        <DateNav date={date} />
         <Link href={`/attendance?date=${shiftDay(date, 1)}`} className="btn-ghost">
           Next ›
         </Link>
@@ -67,40 +69,22 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
               No active workers. <Link href="/workers" className="text-brand-700 underline">Add workers</Link> first.
             </Empty>
           ) : (
-            <AttendanceSheet date={date} rows={rows} />
+            <AttendanceSheet date={date} rows={rows} fresh={records.length === 0} />
           )}
         </Card>
 
         <div className="space-y-6">
-          <Card title="Pay a worker (this day)">
+          <Card title="Pay a worker (this day)" id="add">
             {workers.length === 0 ? (
               <Empty>No workers yet.</Empty>
             ) : (
-              <form action={addLabourPayment} className="space-y-3">
-                <input type="hidden" name="date" value={date} />
-                <Field label="Worker">
-                  <Select
-                    name="workerId"
-                    options={rows.map((w) => ({ value: String(w.id), label: `${w.name} (₹${w.dailyWage}/day)` }))}
-                  />
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Amount (₹)">
-                    <input name="amount" type="number" min="1" required className="input" />
-                  </Field>
-                  <Field label="Type">
-                    <Select name="type" options={LABOUR_PAYMENT_TYPES} />
-                  </Field>
-                </div>
-                <Field label="Paid via">
-                  <Select name="mode" options={PAYMENT_MODES} />
-                </Field>
-                <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
-                <Field label="Note">
-                  <input name="note" className="input" />
-                </Field>
-                <SubmitButton>Save payment</SubmitButton>
-              </form>
+              <PayWorker
+                workers={rows.map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, due: bal.get(w.id)?.balance ?? 0 }))}
+                partners={ctx.partners}
+                defaultPartnerId={ctx.defaultId}
+                date={date}
+                today={today()}
+              />
             )}
           </Card>
 

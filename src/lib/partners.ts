@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { prisma } from "./db";
 import { getCurrentUser } from "./auth";
+import { supplierHref } from "./links";
 
 export type PartnerOption = { id: number; name: string };
 
@@ -100,8 +101,8 @@ export const getPartnerLedger = cache(async (siteId: number): Promise<LedgerEntr
       key: `m${p.id}`,
       kind: "MATERIAL" as const,
       note: p.note,
-      href: "/materials",
-      what: `${p.purchase.material} – ${p.purchase.quantity} ${p.purchase.unit}${p.purchase.supplier ? ` (${p.purchase.supplier})` : ""}`,
+      href: supplierHref(p.purchase.supplier),
+      what: `${p.purchase.material}${p.purchase.quantity > 0 ? ` – ${p.purchase.quantity} ${p.purchase.unit}` : ""}${p.purchase.supplier ? ` (${p.purchase.supplier})` : ""}`,
     })),
     ...exp.map((e) => ({
       ...base(e),

@@ -2,12 +2,13 @@ import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
 import { getCurrentUser } from "@/lib/auth";
 import { addInvestment, addUsersAsPartners, deleteInvestment, deletePartner, savePartner, setPaidBy } from "@/lib/actions";
-import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
+import { modeLabel } from "@/lib/constants";
 import { inr, prettyDate, today } from "@/lib/format";
 import { getTotals } from "@/lib/totals";
 import Link from "next/link";
 import { getPartnerContext, getPartnerLedger, getPartnerReport, LEDGER_KINDS, ledgerTotal } from "@/lib/partners";
-import { Badge, Bar, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, Bar, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
+import { Choice, MODE_BUTTONS, PaidByChoice } from "@/components/Choice";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
 const COLORS = ["bg-brand-500", "bg-sky-500", "bg-violet-500", "bg-teal-500", "bg-rose-500", "bg-amber-500"];
@@ -47,7 +48,9 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader title="Partners & Funds" subtitle="Who put how much money into this project, and the common project fund" />
+      <PageHeader title="Partners & Funds" subtitle="Who put how much money into this project, and the common project fund">
+        <a href="#add" className="btn-primary min-h-11 sm:min-h-0">+ Add funds</a>
+      </PageHeader>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Put into project fund" value={inr(totals.fundsIn)} tone="blue" hint={totals.fundReceived ? `+ ${inr(totals.fundReceived)} received into fund` : undefined} />
@@ -345,9 +348,9 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
         </div>
 
         <div className="space-y-6">
-          <Card title="Add money to project fund">
+          <Card id="add" title="Add money to project fund">
             <form action={addInvestment} className="space-y-3">
-              <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} label="Put in by" fundLabel="Someone else (loan, bank…)" />
+              <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} label="Put in by" fundLabel="Someone else" />
               <Field label={ctx.partners.length ? "If someone else – name" : "From (person / bank / loan) *"}>
                 <input name="source" required={ctx.partners.length === 0} className="input" placeholder="e.g. Home loan – SBI" />
               </Field>
@@ -359,9 +362,7 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
                   <input name="date" type="date" defaultValue={today()} className="input" />
                 </Field>
               </div>
-              <Field label="Mode">
-                <Select name="mode" options={PAYMENT_MODES} defaultValue="BANK" />
-              </Field>
+              <Choice name="mode" label="Mode" options={MODE_BUTTONS} defaultValue="BANK" remember="fundMode" />
               <Field label="Note">
                 <input name="note" className="input" />
               </Field>

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
-import { addLabourPayment, deleteLabourPayment } from "@/lib/actions";
+import { deleteLabourPayment } from "@/lib/actions";
+import { workerBalances } from "@/lib/calc";
 import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, modeLabel, payTypeLabel } from "@/lib/constants";
 import { inr, isMonth, prettyDate, thisMonth, today } from "@/lib/format";
-import { Badge, ByTag, Card, Empty, Field, MonthNav, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, MonthNav, PageHeader, Stat } from "@/components/ui";
 import { getPartnerContext } from "@/lib/partners";
-import { DeleteButton, SubmitButton } from "@/components/buttons";
+import { DeleteButton } from "@/components/buttons";
+import { PayWorker } from "@/components/PayWorker";
 
 export default async function PaymentsPage({
   searchParams,
@@ -18,7 +20,7 @@ export default async function PaymentsPage({
   const site = (await getCurrentSite())!;
 
   const byFilter = sp.by === "fund" ? null : sp.by ? Number(sp.by) : undefined;
-  const [workers, payments, allTime, ctx] = await Promise.all([
+  const [workers, payments, allTime, ctx, allAtt, allPay] = await Promise.all([
     prisma.worker.findMany({ where: { siteId: site.id }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
     prisma.labourPayment.findMany({
       where: {
@@ -33,7 +35,13 @@ export default async function PaymentsPage({
     }),
     prisma.labourPayment.aggregate({ where: { siteId: site.id }, _sum: { amount: true } }),
     getPartnerContext(site.id),
+    prisma.attendance.findMany({ where: { siteId: site.id }, select: { workerId: true, status: true, overtime: true } }),
+    prisma.labourPayment.findMany({ where: { siteId: site.id }, select: { workerId: true, amount: true } }),
   ]);
+  const bal = workerBalances(workers, allAtt, allPay);
+  const payRows = workers
+    .filter((w) => w.active || (bal.get(w.id)?.balance ?? 0) > 0.5)
+    .map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, due: bal.get(w.id)?.balance ?? 0 }));
 
   const total = payments.reduce((s, p) => s + p.amount, 0);
   const byMode = (m: string) => payments.filter((p) => p.mode === m).reduce((s, p) => s + p.amount, 0);
@@ -137,39 +145,13 @@ export default async function PaymentsPage({
           )}
         </Card>
 
-        <Card title="Add payment">
+        <Card title="Pay a worker" id="add">
           {workers.length === 0 ? (
             <Empty>
               <Link href="/workers" className="text-brand-700 underline">Add a worker</Link> first.
             </Empty>
           ) : (
-            <form action={addLabourPayment} className="space-y-3">
-              <Field label="Worker *">
-                <Select
-                  name="workerId"
-                  options={workers.map((w) => ({ value: String(w.id), label: `${w.name}${w.active ? "" : " (inactive)"}` }))}
-                />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Amount (₹) *">
-                  <input name="amount" type="number" min="1" required className="input" />
-                </Field>
-                <Field label="Date">
-                  <input name="date" type="date" defaultValue={today()} className="input" />
-                </Field>
-                <Field label="Type">
-                  <Select name="type" options={LABOUR_PAYMENT_TYPES} />
-                </Field>
-                <Field label="Paid via">
-                  <Select name="mode" options={PAYMENT_MODES} />
-                </Field>
-              </div>
-              <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
-              <Field label="Note">
-                <input name="note" className="input" placeholder="UPI ref, advance for 5 days…" />
-              </Field>
-              <SubmitButton>Save payment</SubmitButton>
-            </form>
+            <PayWorker workers={payRows} partners={ctx.partners} defaultPartnerId={ctx.defaultId} today={today()} />
           )}
         </Card>
       </div>

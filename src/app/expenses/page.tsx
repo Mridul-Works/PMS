@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
 import { addExpense, deleteExpense } from "@/lib/actions";
-import { EXPENSE_CATEGORIES, PAYMENT_MODES, modeLabel } from "@/lib/constants";
+import { EXPENSE_CATEGORIES, modeLabel } from "@/lib/constants";
 import { inr, isMonth, prettyDate, thisMonth, today } from "@/lib/format";
-import { Badge, Bar, ByTag, Card, Empty, Field, MonthNav, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, Bar, ByTag, Card, Empty, Field, MonthNav, PageHeader, Stat } from "@/components/ui";
+import { Choice, ModeChoice, PaidByChoice } from "@/components/Choice";
 import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
@@ -97,30 +98,29 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           </Card>
         </div>
 
-        <Card title="Add expense">
+        <Card id="add" title="Add expense">
           <form action={addExpense} className="space-y-3">
-            <Field label="Category">
-              <Select name="category" options={EXPENSE_CATEGORIES} />
+            <Choice name="category" label="Category" options={EXPENSE_CATEGORIES} />
+            <Field label="Amount (₹) *">
+              <input name="amount" type="number" inputMode="decimal" min="1" step="any" required className="input min-h-11 text-base sm:min-h-0 sm:text-sm" />
             </Field>
-            <Field label="Description *">
-              <input name="description" required className="input" placeholder="e.g. JCB 4 hours for foundation" />
+            <ModeChoice />
+            <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
+            <Field label="Description">
+              <input name="description" className="input" placeholder="optional – category is enough" />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Amount (₹) *">
-                <input name="amount" type="number" min="1" step="any" required className="input" />
-              </Field>
-              <Field label="Date">
-                <input name="date" type="date" defaultValue={today()} className="input" />
-              </Field>
-              <Field label="Paid via">
-                <Select name="mode" options={PAYMENT_MODES} />
-              </Field>
-              <Field label="Paid to">
-                <input name="paidTo" className="input" />
-              </Field>
-            </div>
-            <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
-            <SubmitButton>Add expense</SubmitButton>
+            <details className="rounded-lg border border-stone-200 px-3 py-2">
+              <summary className="cursor-pointer py-1 text-sm font-medium text-stone-700">More details (paid to, date)</summary>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Field label="Paid to">
+                  <input name="paidTo" className="input" />
+                </Field>
+                <Field label="Date">
+                  <input name="date" type="date" defaultValue={today()} className="input" />
+                </Field>
+              </div>
+            </details>
+            <SubmitButton className="btn-primary min-h-11 w-full sm:w-auto">Add expense</SubmitButton>
           </form>
         </Card>
       </div>

@@ -14,9 +14,10 @@ export function PageHeader({ title, subtitle, children }: { title: string; subti
   );
 }
 
-export function Card({ title, action, children, className = "" }: { title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string }) {
+/** Give the main "add" form card id="add": the phone "+" button and the N shortcut jump to it. */
+export function Card({ title, action, children, className = "", id }: { title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string; id?: string }) {
   return (
-    <section className={`card ${className}`}>
+    <section id={id} className={`card scroll-mt-4 ${className}`}>
       {(title || action) && (
         <div className="flex items-center justify-between gap-2 border-b border-stone-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-stone-800">{title}</h2>

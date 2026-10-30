@@ -46,7 +46,7 @@ export default async function Dashboard() {
 
   const recent = [
     ...recentPay.map((p) => ({ id: `p${p.id}`, date: p.date, what: `${p.worker.name} – ${p.type === "ADVANCE" ? "advance" : "wages"}`, kind: "Labour", amount: p.amount, mode: p.mode, by: p.paidBy?.name })),
-    ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: `${m.material} (${m.quantity} ${m.unit})`, kind: "Material", amount: m.total, mode: m.mode, by: undefined as string | undefined })),
+    ...recentMat.map((m) => ({ id: `m${m.id}`, date: m.date, what: m.quantity > 0 ? `${m.material} (${m.quantity} ${m.unit})` : m.material, kind: "Material", amount: m.total, mode: m.mode, by: undefined as string | undefined })),
     ...recentDeal.map((d) => ({
       id: `d${d.id}`,
       date: d.date,
@@ -63,12 +63,81 @@ export default async function Dashboard() {
 
   const present = todayAtt.filter((a) => a.status === "PRESENT").length;
   const half = todayAtt.filter((a) => a.status === "HALF").length;
+  const dueNow = upcoming.filter((u) => u.date <= t);
+
+  const actions = [
+    { href: "/attendance", label: "Attendance", icon: "✓" },
+    { href: "/payments#add", label: "Pay worker", icon: "₹" },
+    { href: "/materials#add", label: "Buy material", icon: "▣" },
+    { href: "/expenses#add", label: "Expense", icon: "◈" },
+    { href: "/deals", label: "Part payment", icon: "%" },
+    { href: "/dues", label: "All dues", icon: "⚖" },
+  ];
 
   return (
     <>
-      <PageHeader title={site.name} subtitle={[site.location, `Started ${prettyDate(site.startDate.toISOString().slice(0, 10))}`].filter(Boolean).join(" · ")}>
-        <Link href="/attendance" className="btn-primary">Mark today&apos;s attendance</Link>
-      </PageHeader>
+      <PageHeader title={site.name} subtitle={[site.location, `Started ${prettyDate(site.startDate.toISOString().slice(0, 10))}`].filter(Boolean).join(" · ")} />
+
+      {/* Today: what needs doing now */}
+      <section className="mb-6 grid gap-3 lg:grid-cols-3">
+        <Card title={`Today · ${prettyDate(t)}`} action={<Link href="/calendar" className="text-xs text-brand-700 hover:underline">Calendar →</Link>}>
+          {todayAtt.length === 0 && activeWorkers > 0 ? (
+            <>
+              <div className="text-sm font-medium text-rose-600">Attendance not marked yet</div>
+              <Link href="/attendance" className="btn-primary mt-3 min-h-11 w-full">Mark attendance</Link>
+            </>
+          ) : (
+            <Link href="/attendance" className="block">
+              <div className="text-3xl font-bold tabular-nums">
+                {present}
+                <span className="text-base font-normal text-stone-500"> / {activeWorkers} present</span>
+              </div>
+              {half > 0 && <div className="text-sm text-amber-600">+ {half} half day</div>}
+              <div className="mt-1 text-xs text-brand-700">Change attendance →</div>
+            </Link>
+          )}
+        </Card>
+
+        <Card title="Due now" action={<Link href="/dues" className="text-xs text-brand-700 hover:underline">All dues →</Link>}>
+          <Link href="/dues" className="block">
+            <div className="text-xs text-stone-500">Pending dues</div>
+            <div className="text-2xl font-bold tabular-nums text-rose-600">{inr(pendingDues)}</div>
+          </Link>
+          {dueNow.length === 0 ? (
+            <p className="mt-2 text-sm text-stone-500">No installments due today.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-stone-100 text-sm">
+              {dueNow.map((u) => (
+                <li key={u.id}>
+                  <Link href={`/deals/${u.dealId}`} className="flex min-h-11 items-center justify-between gap-2 py-1.5 hover:text-brand-700">
+                    <span>
+                      {u.deal.direction === "PAY" ? "↑ Pay " : "↓ Receive "}
+                      <b>{u.deal.party}</b>
+                      <span className={`ml-1 text-xs ${u.date < t ? "font-semibold text-rose-600" : "text-amber-600"}`}>{u.date < t ? "overdue" : "today"}</span>
+                    </span>
+                    <b className="tabular-nums">{inr(u.amount)}</b>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Quick add">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {actions.map((a) => (
+              <Link
+                key={a.href}
+                href={a.href}
+                className="flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-lg border border-stone-200 bg-stone-50 px-2 text-center text-sm font-medium hover:border-brand-500 hover:bg-brand-50"
+              >
+                <span className="text-base text-brand-600">{a.icon}</span>
+                {a.label}
+              </Link>
+            ))}
+          </div>
+        </Card>
+      </section>
 
       {/* Budget */}
       <Card className="mb-6">
@@ -110,7 +179,9 @@ export default async function Dashboard() {
       </Card>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Pending dues" value={inr(pendingDues)} tone="red" hint={`Labour ${inr(totals.labourDue)} · Suppliers ${inr(totals.materialDue)} · Contracts ${inr(totals.contractDue)}`} />
+        <Link href="/dues" className="block rounded-xl transition hover:ring-2 hover:ring-brand-500">
+          <Stat label="Pending dues →" value={inr(pendingDues)} tone="red" hint={`Labour ${inr(totals.labourDue)} · Suppliers ${inr(totals.materialDue)} · Contracts ${inr(totals.contractDue)}`} />
+        </Link>
         <Stat label="Advance with workers" value={inr(totals.labourAdvance)} tone="orange" hint="paid ahead of work" />
         <Stat
           label="Funds put in + received"
@@ -149,15 +220,6 @@ export default async function Dashboard() {
         </Card>
 
         <div className="space-y-6">
-          <Card title="Today at site" action={<Link href="/calendar" className="text-xs text-brand-700 hover:underline">Calendar →</Link>}>
-            <div className="text-3xl font-bold tabular-nums">
-              {present}
-              <span className="text-base font-normal text-stone-500"> / {activeWorkers} present</span>
-            </div>
-            {half > 0 && <div className="text-sm text-amber-600">+ {half} half day</div>}
-            {todayAtt.length === 0 && activeWorkers > 0 && <div className="mt-1 text-sm text-rose-600">Attendance not marked yet</div>}
-          </Card>
-
           <Card title="Upcoming installments" action={<Link href="/deals" className="text-xs text-brand-700 hover:underline">Part payments →</Link>}>
             {upcoming.length === 0 ? (
               <p className="text-sm text-stone-500">No planned installments.</p>

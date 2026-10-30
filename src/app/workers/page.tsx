@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
-import { saveWorker } from "@/lib/actions";
+import { addWorkersBulk, saveWorker } from "@/lib/actions";
 import { workerBalances } from "@/lib/calc";
 import { WORKER_ROLES } from "@/lib/constants";
 import { inr, today } from "@/lib/format";
 import { Badge, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/buttons";
 
-export default async function WorkersPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
-  const { show } = await searchParams;
+export default async function WorkersPage({ searchParams }: { searchParams: Promise<{ show?: string; q?: string }> }) {
+  const { show, q } = await searchParams;
+  const needle = (q ?? "").trim().toLowerCase();
   const site = (await getCurrentSite())!;
   const [workers, attendance, payments] = await Promise.all([
     prisma.worker.findMany({ where: { siteId: site.id }, orderBy: [{ active: "desc" }, { name: "asc" }] }),
@@ -17,7 +18,9 @@ export default async function WorkersPage({ searchParams }: { searchParams: Prom
     prisma.labourPayment.findMany({ where: { siteId: site.id }, select: { workerId: true, amount: true } }),
   ]);
   const bal = workerBalances(workers, attendance, payments);
-  const list = show === "all" ? workers : workers.filter((w) => w.active);
+  const list = (show === "all" ? workers : workers.filter((w) => w.active)).filter(
+    (w) => !needle || w.name.toLowerCase().includes(needle) || w.role.toLowerCase().includes(needle) || (w.phone ?? "").includes(needle),
+  );
   const balances = [...bal.values()];
   const totalOwed = balances.filter((b) => b.balance > 0).reduce((s, b) => s + b.balance, 0);
   const totalAdvance = balances.filter((b) => b.balance < 0).reduce((s, b) => s - b.balance, 0);
@@ -44,8 +47,26 @@ export default async function WorkersPage({ searchParams }: { searchParams: Prom
             </Link>
           }
         >
+          <form className="mb-4 flex gap-2" action="/workers">
+            {show === "all" && <input type="hidden" name="show" value="all" />}
+            <input
+              type="search"
+              name="q"
+              data-search
+              defaultValue={q ?? ""}
+              placeholder={`Search ${workers.length} workers by name, role or phone…`}
+              aria-label="Search workers"
+              className="input min-h-11 flex-1 sm:min-h-0"
+            />
+            <button className="btn-ghost min-h-11 sm:min-h-0">Search</button>
+            {needle && (
+              <Link href={show === "all" ? "/workers?show=all" : "/workers"} className="btn-ghost min-h-11 sm:min-h-0">
+                Clear
+              </Link>
+            )}
+          </form>
           {list.length === 0 ? (
-            <Empty>No workers yet. Add your first worker using the form.</Empty>
+            <Empty>{needle ? `No worker matches “${q}”.` : "No workers yet. Add your first worker using the form."}</Empty>
           ) : (
             <div className="-m-4 overflow-x-auto">
               <table className="table">
@@ -102,7 +123,8 @@ export default async function WorkersPage({ searchParams }: { searchParams: Prom
           </p>
         </Card>
 
-        <Card title="Add worker">
+        <div className="space-y-6">
+        <Card title="Add worker" id="add">
           <form action={saveWorker} className="space-y-3">
             <Field label="Name *">
               <input name="name" required className="input" placeholder="e.g. Ramesh Kumar" />
@@ -127,6 +149,27 @@ export default async function WorkersPage({ searchParams }: { searchParams: Prom
             <SubmitButton>Add worker</SubmitButton>
           </form>
         </Card>
+
+        <Card title="Paste many workers from Excel">
+          <form action={addWorkersBulk} className="space-y-3">
+            <textarea
+              name="list"
+              required
+              rows={6}
+              className="input font-mono text-xs"
+              placeholder={"Ramesh Kumar\tMistri (Mason)\t800\t9876543210\nSuresh\tLabour\t600\nRaju, Helper, 500"}
+            />
+            <Field label="Joined on">
+              <input name="joinedAt" type="date" defaultValue={today()} className="input" />
+            </Field>
+            <SubmitButton>Add all</SubmitButton>
+          </form>
+          <p className="mt-3 text-xs text-stone-500">
+            Copy the columns <b>Name, Role, Daily wage, Phone</b> from Excel and paste – one worker per line. Role and phone are optional
+            (“Raju, 500” works too). A header row is skipped automatically.
+          </p>
+        </Card>
+        </div>
       </div>
     </>
   );

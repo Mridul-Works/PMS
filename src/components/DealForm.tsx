@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { addDeal } from "@/lib/actions";
-import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, PAYMENT_MODES } from "@/lib/constants";
+import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE } from "@/lib/constants";
 import { AmountField } from "./AmountField";
 import { SubmitButton } from "./buttons";
-import { PaidBySelect } from "./ui";
+import { ModeChoice, PaidByChoice } from "./Choice";
 
 export function DealForm({
   today,
@@ -67,27 +67,16 @@ export function DealForm({
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{pay ? "Paid now (advance)" : "Received now"}</div>
         <div className="space-y-3">
           <AmountField name="first" label="Amount or %" total={Number(total) || 0} placeholder="0" quick={[10, 20, 25, 50, 100]} />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="label">Date</span>
-              <input name="date" type="date" defaultValue={today} className="input" />
-            </label>
-            <label className="block">
-              <span className="label">Mode</span>
-              <select name="mode" className="input">
-                {PAYMENT_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <PaidBySelect
+          <label className="block">
+            <span className="label">Date</span>
+            <input name="date" type="date" defaultValue={today} className="input" />
+          </label>
+          <ModeChoice label="Mode" />
+          <PaidByChoice
             partners={partners}
             defaultId={defaultPartnerId}
             label={pay ? "Paid by" : "Received by"}
-            fundLabel={pay ? "Project fund (common)" : "Into project fund (common)"}
+            fundLabel={pay ? "Project fund" : "Into project fund"}
           />
         </div>
       </div>

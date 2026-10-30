@@ -2,13 +2,15 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
 import { deleteMaterial, deleteMaterialPayment, payMaterialDue } from "@/lib/actions";
-import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
+import { modeLabel } from "@/lib/constants";
 import { inr, num, prettyDate, today } from "@/lib/format";
 import { Badge, Bar, ByTag, Card, Empty, PageHeader, Stat } from "@/components/ui";
 import { getPartnerContext } from "@/lib/partners";
+import { supplierHref } from "@/lib/links";
 import { DeleteButton } from "@/components/buttons";
 import { MaterialForm } from "@/components/MaterialForm";
 import { AmountField } from "@/components/AmountField";
+import { ModeChoice, PaidByChoice } from "@/components/Choice";
 
 export default async function MaterialsPage({ searchParams }: { searchParams: Promise<{ material?: string }> }) {
   const sp = await searchParams;
@@ -102,20 +104,22 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                         <tr key={m.id}>
                           <td className="whitespace-nowrap">{prettyDate(m.date)}</td>
                           <td>
-                            <div className="font-medium">{m.material}</div>
+                            <div className="whitespace-nowrap font-medium">{m.material}</div>
                             {(m.billNo || m.note) && <div className="text-xs text-stone-500">{[m.billNo && `Bill ${m.billNo}`, m.note].filter(Boolean).join(" · ")}</div>}
                           </td>
-                          <td className="whitespace-nowrap text-right tabular-nums">{num(m.quantity)} {m.unit}</td>
-                          <td className="text-right tabular-nums">{inr(m.rate)}</td>
+                          <td className="whitespace-nowrap text-right tabular-nums">{m.quantity > 0 ? `${num(m.quantity)} ${m.unit}` : "–"}</td>
+                          <td className="text-right tabular-nums">{m.rate > 0 ? inr(m.rate) : "–"}</td>
                           <td className="text-right font-semibold tabular-nums">{inr(m.total)}</td>
-                          <td className="text-stone-600">{m.supplier}</td>
+                          <td className="text-stone-600">
+                            <Link href={supplierHref(m.supplier)} className="hover:text-brand-700 hover:underline">{m.supplier || "—"}</Link>
+                          </td>
                           <td className="min-w-52">
                             <div className="flex items-center gap-1.5 text-xs">
                               {due > 0.5 ? <Badge tone="DUE">{inr(due)} due</Badge> : <Badge tone="PRESENT">Paid in full</Badge>}
                               <span className="text-stone-500">{Math.round((m.paid / (m.total || 1)) * 100)}% paid</span>
                             </div>
                             <details className="mt-1 text-xs">
-                              <summary className="cursor-pointer text-brand-700">
+                              <summary className="flex min-h-11 cursor-pointer items-center text-brand-700 sm:min-h-0">
                                 {due > 0.5 ? "Pay / history" : "History"} ({m.payments.length + (m.paid - m.payments.reduce((a, p) => a + p.amount, 0) > 0.5 ? 1 : 0)})
                               </summary>
                               <ul className="mt-1 space-y-0.5">
@@ -133,25 +137,14 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                                 ))}
                               </ul>
                               {due > 0.5 && (
-                                <form action={payMaterialDue} className="mt-2 space-y-1.5 rounded-lg bg-stone-50 p-2">
+                                <form action={payMaterialDue} className="mt-2 space-y-2 rounded-lg bg-stone-50 p-2">
                                   <input type="hidden" name="id" value={m.id} />
                                   <AmountField key={m.payments.length} name="amount" label="Pay now (₹ or % of bill)" total={m.total} remaining={due} required />
-                                  {ctx.partners.length > 0 && (
-                                    <select name="paidById" defaultValue={ctx.defaultId ? String(ctx.defaultId) : ""} className="w-full rounded border border-stone-300 px-1 py-1">
-                                      {ctx.partners.map((pt) => (
-                                        <option key={pt.id} value={pt.id}>Paid by {pt.name}</option>
-                                      ))}
-                                      <option value="">Paid from project fund</option>
-                                    </select>
-                                  )}
-                                  <div className="flex gap-1">
-                                    <select name="mode" className="rounded border border-stone-300 px-1 py-1">
-                                      {PAYMENT_MODES.map((pm) => (
-                                        <option key={pm.value} value={pm.value}>{pm.label}</option>
-                                      ))}
-                                    </select>
-                                    <input name="date" type="date" defaultValue={today()} className="rounded border border-stone-300 px-1 py-1" />
-                                    <button className="rounded bg-stone-800 px-2 py-1 text-white">Pay</button>
+                                  <ModeChoice />
+                                  <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
+                                  <div className="flex gap-2">
+                                    <input name="date" type="date" defaultValue={today()} className="input min-h-11 w-auto sm:min-h-0" aria-label="Date" />
+                                    <button className="btn-primary min-h-11 flex-1 sm:min-h-0">Pay</button>
                                   </div>
                                 </form>
                               )}
@@ -174,19 +167,22 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         </div>
 
         <div className="space-y-6">
-          <Card title="Add purchase">
+          <Card id="add" title="Add purchase">
             <MaterialForm today={today()} suppliers={suppliers} partners={ctx.partners} defaultPartnerId={ctx.defaultId} />
           </Card>
           {dues.size > 0 && (
-            <Card title="Supplier dues">
+            <Card title="Supplier dues" action={<Link href="/dues?type=SUPPLIER" className="text-xs text-brand-700 hover:underline">All dues →</Link>}>
               <ul className="divide-y divide-stone-100 text-sm">
                 {[...dues.entries()].sort((a, b) => b[1] - a[1]).map(([s, d]) => (
-                  <li key={s} className="flex justify-between py-2">
-                    <span>{s}</span>
-                    <b className="tabular-nums text-rose-600">{inr(d)}</b>
+                  <li key={s}>
+                    <Link href={supplierHref(s === "Unknown" ? null : s)} className="-mx-2 flex justify-between rounded px-2 py-2 hover:bg-stone-50">
+                      <span className="text-brand-700 hover:underline">{s} →</span>
+                      <b className="tabular-nums text-rose-600">{inr(d)}</b>
+                    </Link>
                   </li>
                 ))}
               </ul>
+              <p className="mt-2 text-xs text-stone-500">Click a supplier to see all their bills, payment history and to record a payment.</p>
             </Card>
           )}
         </div>

@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { addDealPayment, completeDealPayment, deleteDeal, deleteDealPayment, updateDeal } from "@/lib/actions";
 import { dealSummary } from "@/lib/calc";
-import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, PAYMENT_MODES, modeLabel } from "@/lib/constants";
+import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, modeLabel } from "@/lib/constants";
 import { inr, prettyDate, today } from "@/lib/format";
-import { Badge, ByTag, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
+import { Choice, ModeChoice, PaidByChoice } from "@/components/Choice";
 import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 import { AmountField } from "@/components/AmountField";
@@ -131,29 +132,43 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
                           {p.note ? ` · ${p.note}` : ""}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <form action={completeDealPayment} className="flex flex-wrap items-center gap-1">
+                      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                        {/* one tap: mark this installment done with the planned amount, today */}
+                        <form action={completeDealPayment}>
                           <input type="hidden" name="id" value={p.id} />
-                          <input name="amount" type="number" min="1" step="any" defaultValue={p.amount} className="w-24 rounded border border-stone-300 px-2 py-1 text-xs" title="Amount actually paid" />
-                          <input name="date" type="date" defaultValue={t} className="rounded border border-stone-300 px-1 py-1 text-xs" />
-                          <select name="mode" defaultValue={p.mode} className="rounded border border-stone-300 px-1 py-1 text-xs">
-                            {PAYMENT_MODES.map((m) => (
-                              <option key={m.value} value={m.value}>{m.label}</option>
-                            ))}
-                          </select>
-                          {ctx.partners.length > 0 && (
-                            <select name="paidById" defaultValue={p.paidById ? String(p.paidById) : ""} className="rounded border border-stone-300 px-1 py-1 text-xs">
-                              {ctx.partners.map((pt) => (
-                                <option key={pt.id} value={pt.id}>{pay ? "by" : "to"} {pt.name}</option>
-                              ))}
-                              <option value="">project fund</option>
-                            </select>
-                          )}
-                          <SubmitButton className="rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white">Mark {verb.toLowerCase()}</SubmitButton>
+                          <input type="hidden" name="amount" value={p.amount} />
+                          <input type="hidden" name="date" value={t} />
+                          <input type="hidden" name="mode" value={p.mode} />
+                          {ctx.partners.length > 0 && <input type="hidden" name="paidById" value={String(p.paidById ?? ctx.defaultId ?? "")} />}
+                          <SubmitButton className="btn-primary min-h-11 sm:min-h-0">
+                            Mark {verb.toLowerCase()} {inr(p.amount)}
+                          </SubmitButton>
                         </form>
+                        <details className="text-xs">
+                          <summary className="flex min-h-11 cursor-pointer items-center px-2 text-brand-700 sm:min-h-0">Change…</summary>
+                          <form action={completeDealPayment} className="mt-2 w-72 max-w-full space-y-2 rounded-lg bg-stone-50 p-3">
+                            <input type="hidden" name="id" value={p.id} />
+                            <div className="grid grid-cols-2 gap-2">
+                              <Field label="Amount (₹)">
+                                <input name="amount" type="number" min="1" step="any" defaultValue={p.amount} className="input" />
+                              </Field>
+                              <Field label="Date">
+                                <input name="date" type="date" defaultValue={t} className="input" />
+                              </Field>
+                            </div>
+                            <ModeChoice label="Mode" defaultValue={p.mode} />
+                            <PaidByChoice
+                              partners={ctx.partners}
+                              defaultId={p.paidById ?? ctx.defaultId}
+                              label={pay ? "Paid by" : "Received by"}
+                              fundLabel={pay ? "Project fund" : "Into project fund"}
+                            />
+                            <SubmitButton className="btn-primary w-full">Save as {verb.toLowerCase()}</SubmitButton>
+                          </form>
+                        </details>
                         <form action={deleteDealPayment}>
                           <input type="hidden" name="id" value={p.id} />
-                          <DeleteButton label="✕" confirmText="Remove this planned installment?" />
+                          <DeleteButton label="✕" />
                         </form>
                       </div>
                     </li>
@@ -165,32 +180,27 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         </div>
 
         <div className="space-y-6">
-          <Card title={pay ? "Add payment" : "Add receipt"}>
+          <Card id="add" title={pay ? "Add payment" : "Add receipt"}>
             <form action={addDealPayment} className="space-y-3">
               <input type="hidden" name="dealId" value={deal.id} />
               <AmountField key={deal.payments.length} name="amount" label="Amount or % of total *" total={deal.totalAmount} remaining={Math.max(0, s.remaining)} required />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Status">
-                  <Select
-                    name="status"
-                    options={[
-                      { value: "PAID", label: pay ? "Paid now" : "Received now" },
-                      { value: "PLANNED", label: "Planned (due date)" },
-                    ]}
-                  />
-                </Field>
-                <Field label="Date / due date">
-                  <input name="date" type="date" defaultValue={t} className="input" />
-                </Field>
-              </div>
-              <Field label="Mode">
-                <Select name="mode" options={PAYMENT_MODES} />
+              <Choice
+                name="status"
+                label="Status"
+                options={[
+                  { value: "PAID", label: pay ? "Paid now" : "Received now" },
+                  { value: "PLANNED", label: "Planned (due date)" },
+                ]}
+              />
+              <Field label="Date / due date">
+                <input name="date" type="date" defaultValue={t} className="input" />
               </Field>
-              <PaidBySelect
+              <ModeChoice label="Mode" />
+              <PaidByChoice
                 partners={ctx.partners}
                 defaultId={ctx.defaultId}
                 label={pay ? "Paid by" : "Received by"}
-                fundLabel={pay ? "Project fund (common)" : "Into project fund (common)"}
+                fundLabel={pay ? "Project fund" : "Into project fund"}
               />
               <Field label="Note">
                 <input name="note" className="input" placeholder="e.g. after slab casting" />

@@ -214,6 +214,39 @@ export async function payMaterialDue(f: FormData) {
   refresh();
 }
 
+/**
+ * Pay a supplier one amount: it is applied to their unpaid bills, oldest first.
+ * Creates one payment row per bill it touches, so each bill keeps its own history.
+ */
+export async function paySupplier(f: FormData) {
+  const sid = await siteId();
+  const name = str(f, "supplier");
+  const supplier = name && name !== "-" ? name : null;
+  let left = Math.round(numVal(f, "amount") * 100) / 100;
+  if (left <= 0) return;
+  const bills = await prisma.materialPurchase.findMany({
+    where: { siteId: sid, supplier: supplier ? { equals: supplier, mode: "insensitive" } : null },
+    orderBy: [{ date: "asc" }, { id: "asc" }],
+  });
+  const w = await who(f, sid);
+  const date = dateVal(f);
+  const mode = str(f, "mode") || "CASH";
+  const note = optStr(f, "note");
+  const ops = [];
+  for (const b of bills) {
+    const due = Math.round((b.total - b.paid) * 100) / 100;
+    if (due <= 0.5 || left <= 0) continue;
+    const amount = Math.min(due, left);
+    left = Math.round((left - amount) * 100) / 100;
+    ops.push(
+      prisma.materialPayment.create({ data: { siteId: sid, purchaseId: b.id, date, amount, mode, note, ...w } }),
+      prisma.materialPurchase.update({ where: { id: b.id }, data: { paid: { increment: amount } } }),
+    );
+  }
+  if (ops.length) await prisma.$transaction(ops);
+  refresh();
+}
+
 export async function deleteMaterialPayment(f: FormData) {
   const p = await prisma.materialPayment.findUnique({ where: { id: numVal(f, "id") } });
   if (!p) return;
@@ -471,5 +504,37 @@ export async function addUsersAsPartners() {
     await prisma.partner.createMany({
       data: add.map((u) => ({ siteId: sid, userId: u.id, name: u.name.charAt(0).toUpperCase() + u.name.slice(1) })),
     });
+  refresh();
+}
+
+/**
+ * Add many workers at once, pasted from Excel / WhatsApp.
+ * One worker per line: name, role, daily wage, phone (tab or comma separated; role and phone optional).
+ * "Ramesh, 600" also works. Lines without a name or a numeric wage (e.g. a header row) are skipped.
+ */
+export async function addWorkersBulk(f: FormData) {
+  const sid = await siteId();
+  const joinedAt = new Date(dateVal(f, "joinedAt"));
+  const rows = str(f, "list")
+    .split(/\r?\n/)
+    .map((line) => line.split(/\t|,/).map((c) => c.trim()))
+    .map((c) => {
+      const name = c[0];
+      // wage is the 3rd column, or the 2nd when the role is left out
+      const wageAt = c.length >= 3 && Number.isFinite(Number(c[2])) && c[2] !== "" ? 2 : Number.isFinite(Number(c[1])) && c[1] !== "" ? 1 : -1;
+      if (!name || wageAt < 0) return null;
+      const wage = Number(c[wageAt].replace(/[₹,\s]/g, ""));
+      if (!(wage > 0)) return null;
+      return {
+        siteId: sid,
+        name,
+        role: (wageAt === 2 && c[1]) || "Labour",
+        dailyWage: wage,
+        phone: c[wageAt + 1] || null,
+        joinedAt,
+      };
+    })
+    .filter((r) => r !== null);
+  if (rows.length) await prisma.worker.createMany({ data: rows });
   refresh();
 }

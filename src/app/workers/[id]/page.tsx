@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { addLabourPayment, deleteLabourPayment, deleteWorker, saveWorker } from "@/lib/actions";
 import { workerBalances } from "@/lib/calc";
-import { LABOUR_PAYMENT_TYPES, PAYMENT_MODES, WORKER_ROLES, modeLabel, payTypeLabel } from "@/lib/constants";
+import { WORKER_ROLES, modeLabel, payTypeLabel } from "@/lib/constants";
 import { daysInMonth, inr, isMonth, parseISODate, prettyDate, thisMonth, today } from "@/lib/format";
-import { Badge, ByTag, Card, Empty, Field, MonthNav, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
+import { Badge, ByTag, Card, Empty, Field, MonthNav, PageHeader, Select, Stat } from "@/components/ui";
+import { Choice, ModeChoice, PaidByChoice } from "@/components/Choice";
 import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
@@ -125,35 +126,44 @@ export default async function WorkerPage({
         </Card>
 
         <div className="space-y-6">
-          <Card title="Pay this worker">
+          <Card title="Pay this worker" id="add">
             <form action={addLabourPayment} className="space-y-3">
               <input type="hidden" name="workerId" value={worker.id} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Amount (₹) *">
-                  <input
-                    name="amount"
-                    type="number"
-                    min="1"
-                    required
-                    className="input"
-                    defaultValue={all.balance > 0 ? Math.round(all.balance) : undefined}
-                  />
-                </Field>
-                <Field label="Date">
-                  <input name="date" type="date" defaultValue={today()} className="input" />
-                </Field>
-                <Field label="Type">
-                  <Select name="type" options={LABOUR_PAYMENT_TYPES} />
-                </Field>
-                <Field label="Paid via">
-                  <Select name="mode" options={PAYMENT_MODES} />
-                </Field>
-              </div>
-              <PaidBySelect partners={ctx.partners} defaultId={ctx.defaultId} />
-              <Field label="Note">
-                <input name="note" className="input" placeholder="e.g. advance for 3 days" />
+              <Field label={all.balance > 0 ? `Amount (₹) – ${inr(all.balance)} due` : "Amount (₹) *"}>
+                <input
+                  name="amount"
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
+                  className="input min-h-11 text-lg font-semibold sm:min-h-0"
+                  defaultValue={Math.round(all.balance > 0 ? all.balance : worker.dailyWage)}
+                />
               </Field>
-              <SubmitButton>Save payment</SubmitButton>
+              <Choice
+                name="type"
+                label="Type"
+                defaultValue={all.balance > 0 ? "DAILY" : "ADVANCE"}
+                options={[
+                  { value: "DAILY", label: "Wages" },
+                  { value: "ADVANCE", label: "Advance" },
+                  { value: "SETTLEMENT", label: "Settlement" },
+                ]}
+              />
+              <ModeChoice />
+              <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
+              <details className="text-sm">
+                <summary className="cursor-pointer py-1 text-stone-600">More details</summary>
+                <div className="mt-2 space-y-3">
+                  <Field label="Date">
+                    <input name="date" type="date" defaultValue={today()} className="input" />
+                  </Field>
+                  <Field label="Note">
+                    <input name="note" className="input" placeholder="e.g. advance for 3 days" />
+                  </Field>
+                </div>
+              </details>
+              <SubmitButton className="btn-primary min-h-11 w-full sm:min-h-0">Save payment</SubmitButton>
             </form>
           </Card>
 

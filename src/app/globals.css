@@ -47,3 +47,53 @@ body {
     @apply border-b-0;
   }
 }
+
+/* ---------- phone: tables become stacked rows (no sideways scrolling) ---------- */
+@media (max-width: 639px) {
+  .table thead {
+    display: none;
+  }
+  .table,
+  .table tbody,
+  .table tfoot {
+    display: block;
+    width: 100%;
+  }
+  .table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f5f5f4;
+  }
+  .table tr:last-child {
+    border-bottom: 0;
+  }
+  .table td {
+    display: block;
+    border: 0 !important;
+    padding: 0;
+    min-width: 0 !important;
+    white-space: normal;
+  }
+  /* amounts and row actions go to the right edge */
+  .table td.text-right {
+    margin-left: auto;
+  }
+  .table td.text-right + td.text-right {
+    margin-left: 0;
+  }
+  .table td:empty {
+    display: none;
+  }
+}
+
+/* ---------- touch screens: finger-sized checkboxes ---------- */
+@media (pointer: coarse) {
+  input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
