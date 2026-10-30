@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
 import { getCurrentUser } from "@/lib/auth";
-import { addInvestment, deleteInvestment, deletePartner, savePartner } from "@/lib/actions";
+import { addInvestment, addUsersAsPartners, deleteInvestment, deletePartner, savePartner, setPaidBy } from "@/lib/actions";
 import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
 import { inr, prettyDate, today } from "@/lib/format";
 import { getTotals } from "@/lib/totals";
 import Link from "next/link";
-import { getPartnerContext, getPartnerLedger, getPartnerReport, LEDGER_KINDS } from "@/lib/partners";
+import { getPartnerContext, getPartnerLedger, getPartnerReport, LEDGER_KINDS, ledgerTotal } from "@/lib/partners";
 import { Badge, Bar, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
@@ -34,7 +34,8 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
     ...rows.map((r, i) => ({ key: String(r.id), label: r.name, color: COLORS[i % COLORS.length], entries: ledger.filter((e) => e.partnerId === r.id) })),
     ...(fundEntries.length ? [{ key: "fund", label: "Project fund / others", color: "bg-stone-400", entries: fundEntries }] : []),
   ];
-  const active = tabs.find((t) => t.key === sp.partner) ?? tabs[0];
+  // default: first tab that has entries
+  const active = tabs.find((t) => t.key === sp.partner) ?? tabs.find((t) => t.entries.length > 0) ?? tabs[0];
   const kindTotals = LEDGER_KINDS.map((k) => ({
     ...k,
     count: active?.entries.filter((e) => e.kind === k.kind).length ?? 0,
@@ -65,6 +66,11 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
           <Empty>
             No partners yet. {isAdmin ? "Add partners (e.g. Mridul, Vinay) with the form below" : "Ask an admin to add partners"} – then every payment can be marked
             “Paid by” a partner.
+            {isAdmin && users.length > 0 && (
+              <form action={addUsersAsPartners} className="mt-3">
+                <SubmitButton>Add all logins as partners ({users.map((u) => u.name).join(", ")})</SubmitButton>
+              </form>
+            )}
           </Empty>
         ) : (
           <>
@@ -166,7 +172,7 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
             {/* partner tabs */}
             <div className="mb-4 flex flex-wrap gap-2">
               {tabs.map((t) => {
-                const total = t.entries.reduce((s, e) => s + (e.kind === "RECEIVED" ? -e.amount : e.amount), 0);
+                const total = ledgerTotal(t.entries);
                 const on = t.key === active.key;
                 return (
                   <Link
@@ -216,7 +222,9 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
                       <th>Type</th>
                       <th>Paid for</th>
                       <th>Mode</th>
+                      <th>Entered by</th>
                       <th className="text-right">Amount</th>
+                      {isAdmin && ctx.partners.length > 0 && <th>Paid by</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -229,18 +237,42 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
                           {e.note && <div className="text-xs text-stone-500">{e.note}</div>}
                         </td>
                         <td><Badge tone={e.mode}>{modeLabel(e.mode)}</Badge></td>
+                        <td className="whitespace-nowrap text-xs text-stone-600">
+                          {e.enteredBy ?? <span className="text-stone-400">not recorded</span>}
+                        </td>
                         <td className={`text-right font-semibold tabular-nums ${e.kind === "RECEIVED" ? "text-stone-500" : ""}`}>
                           {e.kind === "RECEIVED" ? "− " : ""}{inr(e.amount)}
                         </td>
+                        {isAdmin && ctx.partners.length > 0 && (
+                          <td>
+                            <form action={setPaidBy} className="flex items-center gap-1">
+                              <input type="hidden" name="id" value={e.id} />
+                              <input type="hidden" name="kind" value={e.kind} />
+                              <select
+                                name="paidById"
+                                defaultValue={e.partnerId ? String(e.partnerId) : ""}
+                                className="rounded border border-stone-300 px-1 py-1 text-xs"
+                                aria-label="Paid by"
+                              >
+                                {ctx.partners.map((p) => (
+                                  <option key={p.id} value={p.id}>{e.kind === "RECEIVED" ? "to" : "by"} {p.name}</option>
+                                ))}
+                                <option value="">{e.kind === "FUND" ? "outside source" : "project fund"}</option>
+                              </select>
+                              <button className="rounded border border-stone-300 px-2 py-1 text-xs hover:bg-stone-50">Save</button>
+                            </form>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={4} className="font-semibold">{kind ? kindTotals.find((k) => k.kind === kind)?.label : "Total"} ({shown.length} entries)</td>
+                      <td colSpan={5} className="font-semibold">{kind ? kindTotals.find((k) => k.kind === kind)?.label : "Total"} ({shown.length} entries)</td>
                       <td className="text-right font-bold tabular-nums">
-                        {inr(shown.reduce((s, e) => s + (e.kind === "RECEIVED" ? -e.amount : e.amount), 0))}
+                        {inr(ledgerTotal(shown))}
                       </td>
+                      {isAdmin && ctx.partners.length > 0 && <td />}
                     </tr>
                   </tfoot>
                 </table>

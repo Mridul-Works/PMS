@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { getCurrentSite, SITE_COOKIE } from "./site";
-import { requireAdmin } from "./auth";
+import { getCurrentUser, requireAdmin } from "./auth";
 import { isDate, shiftDay, today } from "./format";
 
 // ---------- helpers ----------
@@ -33,6 +33,21 @@ const paidBy = (f: FormData) => {
   const n = Number(str(f, "paidById"));
   return Number.isInteger(n) && n > 0 ? n : null;
 };
+
+/**
+ * "Paid by" + "entered by" for a new payment row.
+ * If the form had no "Paid by" dropdown (e.g. no partners existed when the page was opened),
+ * the payment is credited to the logged-in user's own partner on that site, if they have one.
+ */
+async function who(f: FormData, sid: number) {
+  const user = await getCurrentUser();
+  let paidById = paidBy(f);
+  if (!f.has("paidById") && user) {
+    const mine = await prisma.partner.findFirst({ where: { siteId: sid, userId: user.id, active: true }, select: { id: true } });
+    paidById = mine?.id ?? null;
+  }
+  return { paidById, createdById: user?.id ?? null };
+}
 
 async function siteId() {
   const site = await getCurrentSite();
@@ -129,16 +144,17 @@ export async function addLabourPayment(f: FormData) {
   const amount = numVal(f, "amount");
   const workerId = numVal(f, "workerId");
   if (!amount || !workerId) return;
+  const sid = await siteId();
   await prisma.labourPayment.create({
     data: {
-      siteId: await siteId(),
+      siteId: sid,
       workerId,
       amount,
       date: dateVal(f),
       type: str(f, "type") || "DAILY",
       mode: str(f, "mode") || "CASH",
       note: optStr(f, "note"),
-      paidById: paidBy(f),
+      ...(await who(f, sid)),
     },
   });
   refresh();
@@ -178,7 +194,7 @@ export async function addMaterial(f: FormData) {
     },
   });
   if (paid > 0)
-    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: "At purchase", paidById: paidBy(f) } });
+    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: "At purchase", ...(await who(f, sid)) } });
   refresh();
 }
 
@@ -191,7 +207,7 @@ export async function payMaterialDue(f: FormData) {
   if (amount <= 0) return;
   await prisma.$transaction([
     prisma.materialPayment.create({
-      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: optStr(f, "note"), paidById: paidBy(f) },
+      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: optStr(f, "note"), ...(await who(f, m.siteId)) },
     }),
     prisma.materialPurchase.update({ where: { id }, data: { paid: m.paid + amount } }),
   ]);
@@ -217,16 +233,17 @@ export async function deleteMaterial(f: FormData) {
 export async function addExpense(f: FormData) {
   const amount = numVal(f, "amount");
   if (!amount) return;
+  const sid = await siteId();
   await prisma.expense.create({
     data: {
-      siteId: await siteId(),
+      siteId: sid,
       date: dateVal(f),
       category: str(f, "category") || "Miscellaneous",
       description: str(f, "description") || str(f, "category"),
       amount,
       mode: str(f, "mode") || "CASH",
       paidTo: optStr(f, "paidTo"),
-      paidById: paidBy(f),
+      ...(await who(f, sid)),
     },
   });
   refresh();
@@ -243,9 +260,11 @@ export async function addInvestment(f: FormData) {
   if (!amount) return;
   const partnerId = paidBy(f);
   const partner = partnerId ? await prisma.partner.findUnique({ where: { id: partnerId } }) : null;
+  const user = await getCurrentUser();
   await prisma.investment.create({
     data: {
       siteId: await siteId(),
+      createdById: user?.id ?? null,
       paidById: partner?.id ?? null,
       date: dateVal(f),
       source: partner?.name || str(f, "source") || "Owner",
@@ -285,7 +304,7 @@ export async function addDeal(f: FormData) {
   // first payment now (advance) – in rupees or %
   const first = Math.min(totalAmount, amountOf(f, "first", totalAmount));
   const mode = str(f, "mode") || "CASH";
-  const by = paidBy(f);
+  const { paidById: by, createdById } = await who(f, sid);
   const rows: { date: string; amount: number; status: string; mode: string; note?: string; paidById?: number | null }[] = [];
   if (first > 0) rows.push({ date, amount: first, status: "PAID", mode, note: "Advance", paidById: by });
 
@@ -302,7 +321,7 @@ export async function addDeal(f: FormData) {
     }
   }
   if (rows.length)
-    await prisma.dealPayment.createMany({ data: rows.map((r) => ({ ...r, siteId: sid, dealId: deal.id })) });
+    await prisma.dealPayment.createMany({ data: rows.map((r) => ({ ...r, siteId: sid, dealId: deal.id, createdById })) });
   refresh();
   redirect(`/deals/${deal.id}`);
 }
@@ -351,7 +370,7 @@ export async function addDealPayment(f: FormData) {
       mode: str(f, "mode") || "CASH",
       status: str(f, "status") === "PLANNED" ? "PLANNED" : "PAID",
       note: optStr(f, "note"),
-      paidById: paidBy(f),
+      ...(await who(f, deal.siteId)),
     },
   });
   await clearPlannedIfSettled(deal.id);
@@ -362,9 +381,19 @@ export async function addDealPayment(f: FormData) {
 export async function completeDealPayment(f: FormData) {
   const id = numVal(f, "id");
   const amount = numVal(f, "amount");
+  const existing = await prisma.dealPayment.findUnique({ where: { id }, select: { siteId: true, createdById: true } });
+  if (!existing) return;
+  const w = await who(f, existing.siteId);
   const p = await prisma.dealPayment.update({
     where: { id },
-    data: { status: "PAID", date: dateVal(f), mode: str(f, "mode") || "CASH", paidById: paidBy(f), ...(amount > 0 ? { amount } : {}) },
+    data: {
+      status: "PAID",
+      date: dateVal(f),
+      mode: str(f, "mode") || "CASH",
+      paidById: w.paidById,
+      createdById: existing.createdById ?? w.createdById,
+      ...(amount > 0 ? { amount } : {}),
+    },
   });
   await clearPlannedIfSettled(p.dealId);
   refresh();
@@ -398,5 +427,49 @@ export async function savePartner(f: FormData) {
 export async function deletePartner(f: FormData) {
   await requireAdmin();
   await prisma.partner.delete({ where: { id: numVal(f, "id") } });
+  refresh();
+}
+
+/** Admin: change who paid an existing entry (used to assign old "Project fund" entries to a partner). */
+export async function setPaidBy(f: FormData) {
+  await requireAdmin();
+  const id = numVal(f, "id");
+  const raw = str(f, "paidById");
+  const kind = str(f, "kind");
+  if (!id) return;
+  const sid = await siteId();
+  let paidById: number | null = null;
+  if (raw) {
+    const partner = await prisma.partner.findFirst({ where: { id: Number(raw), siteId: sid }, select: { id: true, name: true } });
+    if (!partner) return;
+    paidById = partner.id;
+  }
+  const where = { id, siteId: sid };
+  const data = { paidById };
+  if (kind === "LABOUR") await prisma.labourPayment.updateMany({ where, data });
+  else if (kind === "MATERIAL") await prisma.materialPayment.updateMany({ where, data });
+  else if (kind === "EXPENSE") await prisma.expense.updateMany({ where, data });
+  else if (kind === "CONTRACT" || kind === "RECEIVED") await prisma.dealPayment.updateMany({ where, data });
+  else if (kind === "FUND") {
+    const partner = paidById ? await prisma.partner.findUnique({ where: { id: paidById }, select: { name: true } }) : null;
+    await prisma.investment.updateMany({ where, data: { paidById, ...(partner ? { source: partner.name } : {}) } });
+  }
+  refresh();
+}
+
+/** Admin: add every active login user as a partner of the current site (skips ones already added). */
+export async function addUsersAsPartners() {
+  await requireAdmin();
+  const sid = await siteId();
+  const [users, existing] = await Promise.all([
+    prisma.user.findMany({ where: { active: true }, orderBy: { id: "asc" }, select: { id: true, name: true } }),
+    prisma.partner.findMany({ where: { siteId: sid }, select: { userId: true } }),
+  ]);
+  const have = new Set(existing.map((p) => p.userId));
+  const add = users.filter((u) => !have.has(u.id));
+  if (add.length)
+    await prisma.partner.createMany({
+      data: add.map((u) => ({ siteId: sid, userId: u.id, name: u.name.charAt(0).toUpperCase() + u.name.slice(1) })),
+    });
   refresh();
 }

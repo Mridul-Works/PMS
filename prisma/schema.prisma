@@ -21,16 +21,16 @@ model Site {
   notes     String?
   createdAt DateTime @default(now())
 
-  workers    Worker[]
-  attendance Attendance[]
-  payments   LabourPayment[]
-  materials  MaterialPurchase[]
-  expenses   Expense[]
-  investments Investment[]
-  deals       Deal[]
-  dealPayments DealPayment[]
+  workers          Worker[]
+  attendance       Attendance[]
+  payments         LabourPayment[]
+  materials        MaterialPurchase[]
+  expenses         Expense[]
+  investments      Investment[]
+  deals            Deal[]
+  dealPayments     DealPayment[]
   materialPayments MaterialPayment[]
-  partners    Partner[]
+  partners         Partner[]
 }
 
 model Worker {
@@ -51,14 +51,14 @@ model Worker {
 
 // One row per worker per day. status: PRESENT | HALF | ABSENT
 model Attendance {
-  id       Int      @id @default(autoincrement())
+  id       Int    @id @default(autoincrement())
   siteId   Int
-  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  site     Site   @relation(fields: [siteId], references: [id], onDelete: Cascade)
   workerId Int
-  worker   Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
-  date     String   // YYYY-MM-DD
+  worker   Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date     String // YYYY-MM-DD
   status   String
-  overtime Float    @default(0) // extra amount for the day (overtime / bonus)
+  overtime Float  @default(0) // extra amount for the day (overtime / bonus)
 
   @@unique([workerId, date])
   @@index([siteId, date])
@@ -66,19 +66,22 @@ model Attendance {
 
 // type: DAILY | ADVANCE | SETTLEMENT     mode: CASH | GPAY | BANK
 model LabourPayment {
-  id       Int      @id @default(autoincrement())
-  siteId   Int
-  site     Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  workerId Int
-  worker   Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
-  date     String
-  amount   Float
-  type     String   @default("DAILY")
-  mode     String   @default("CASH")
-  note     String?
-  createdAt DateTime @default(now())
-  paidById  Int?
-  paidBy    Partner? @relation("LabourPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  id          Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  workerId    Int
+  worker      Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  date        String
+  amount      Float
+  type        String   @default("DAILY")
+  mode        String   @default("CASH")
+  note        String?
+  createdAt   DateTime @default(now())
+  paidById    Int?
+  paidBy      Partner? @relation("LabourPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  // login user who entered this row (for audit / "entered by")
+  createdById Int?
+  createdBy   User?    @relation("LabourCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
@@ -88,9 +91,9 @@ model MaterialPurchase {
   siteId    Int
   site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   date      String
-  material  String   // Sariya, Cement, Brick, Sand ...
+  material  String // Sariya, Cement, Brick, Sand ...
   quantity  Float
-  unit      String   // kg, ton, bag, piece, trolley ...
+  unit      String // kg, ton, bag, piece, trolley ...
   rate      Float
   total     Float
   paid      Float    @default(0)
@@ -107,52 +110,61 @@ model MaterialPurchase {
 
 // Each part-payment made against a material bill
 model MaterialPayment {
-  id         Int      @id @default(autoincrement())
-  siteId     Int
-  site       Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  purchaseId Int
-  purchase   MaterialPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
-  date       String
-  amount     Float
-  mode       String   @default("CASH")
-  note       String?
-  createdAt  DateTime @default(now())
-  paidById  Int?
-  paidBy    Partner? @relation("MaterialPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  id          Int              @id @default(autoincrement())
+  siteId      Int
+  site        Site             @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  purchaseId  Int
+  purchase    MaterialPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  date        String
+  amount      Float
+  mode        String           @default("CASH")
+  note        String?
+  createdAt   DateTime         @default(now())
+  paidById    Int?
+  paidBy      Partner?         @relation("MaterialPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  // login user who entered this row (for audit / "entered by")
+  createdById Int?
+  createdBy   User?            @relation("MaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
 
 model Expense {
-  id        Int      @id @default(autoincrement())
-  siteId    Int
-  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  date      String
-  category  String   // Transport, Machinery, Electricity ...
+  id          Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date        String
+  category    String // Transport, Machinery, Electricity ...
   description String
-  amount    Float
-  mode      String   @default("CASH")
-  paidTo    String?
-  createdAt DateTime @default(now())
-  paidById  Int?
-  paidBy    Partner? @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  amount      Float
+  mode        String   @default("CASH")
+  paidTo      String?
+  createdAt   DateTime @default(now())
+  paidById    Int?
+  paidBy      Partner? @relation("ExpensePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  // login user who entered this row (for audit / "entered by")
+  createdById Int?
+  createdBy   User?    @relation("ExpenseCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
 
 // Money put INTO the project (owner capital, partner, loan)
 model Investment {
-  id        Int      @id @default(autoincrement())
-  siteId    Int
-  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  date      String
-  source    String   // who invested (name; kept for display)
-  amount    Float
-  mode      String   @default("BANK")
-  note      String?
-  createdAt DateTime @default(now())
-  paidById  Int?
-  paidBy    Partner? @relation("InvestmentBy", fields: [paidById], references: [id], onDelete: SetNull)
+  id          Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  date        String
+  source      String // who invested (name; kept for display)
+  amount      Float
+  mode        String   @default("BANK")
+  note        String?
+  createdAt   DateTime @default(now())
+  paidById    Int?
+  paidBy      Partner? @relation("InvestmentBy", fields: [paidById], references: [id], onDelete: SetNull)
+  // login user who entered this row (for audit / "entered by")
+  createdById Int?
+  createdBy   User?    @relation("InvestmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 }
 
 // An agreed total amount that is paid or received in parts.
@@ -162,11 +174,11 @@ model Deal {
   siteId      Int
   site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   direction   String   @default("PAY")
-  party       String   // person / company
-  title       String   // what it is for
+  party       String // person / company
+  title       String // what it is for
   category    String
   totalAmount Float
-  date        String   // agreement date
+  date        String // agreement date
   note        String?
   createdAt   DateTime @default(now())
 
@@ -177,20 +189,23 @@ model Deal {
 
 // One installment. status: PAID (done) | PLANNED (due on `date`)
 model DealPayment {
-  id        Int      @id @default(autoincrement())
-  siteId    Int
-  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  dealId    Int
-  deal      Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
-  date      String
-  amount    Float
-  mode      String   @default("CASH")
-  status    String   @default("PAID")
-  note      String?
-  createdAt DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  siteId      Int
+  site        Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  dealId      Int
+  deal        Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  date        String
+  amount      Float
+  mode        String   @default("CASH")
+  status      String   @default("PAID")
+  note        String?
+  createdAt   DateTime @default(now())
   // PAY deals: partner who paid. RECEIVE deals: partner who received the money.
-  paidById  Int?
-  paidBy    Partner? @relation("DealPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  paidById    Int?
+  paidBy      Partner? @relation("DealPaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  // login user who entered this row (for audit / "entered by")
+  createdById Int?
+  createdBy   User?    @relation("DealCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([siteId, date])
 }
@@ -228,5 +243,10 @@ model User {
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  partners Partner[]
+  partners                Partner[]
+  labourPaymentsEntered   LabourPayment[]   @relation("LabourCreatedBy")
+  materialPaymentsEntered MaterialPayment[] @relation("MaterialCreatedBy")
+  expensesEntered         Expense[]         @relation("ExpenseCreatedBy")
+  investmentsEntered      Investment[]      @relation("InvestmentCreatedBy")
+  dealPaymentsEntered     DealPayment[]     @relation("DealCreatedBy")
 }

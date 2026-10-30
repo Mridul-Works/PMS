@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "crypto";
@@ -38,13 +39,13 @@ export async function endSession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** The logged-in user, or null. */
-export async function getCurrentUser() {
+/** The logged-in user, or null. Cached per request (layout + page + helpers share one lookup). */
+export const getCurrentUser = cache(async function getCurrentUser() {
   const uid = await verifySession((await cookies()).get(SESSION_COOKIE)?.value);
   if (!uid) return null;
   const user = await prisma.user.findUnique({ where: { id: uid }, select: { id: true, name: true, username: true, role: true, active: true } });
   return user?.active ? user : null;
-}
+});
 
 export async function requireUser() {
   const user = await getCurrentUser();
