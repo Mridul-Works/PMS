@@ -97,3 +97,68 @@ export async function getPartnerReport(siteId: number) {
     fromFund: pick(lab, null) + pick(mat, null) + pick(exp, null) + dealSum(null, "PAY"),
   };
 }
+
+export type LedgerKind = "FUND" | "LABOUR" | "MATERIAL" | "EXPENSE" | "CONTRACT" | "RECEIVED";
+
+export type LedgerEntry = {
+  key: string;
+  partnerId: number | null; // null = project fund / outside source
+  date: string;
+  kind: LedgerKind;
+  what: string; // e.g. "Cement – 50 bag (Sharma Traders)"
+  amount: number; // always positive; RECEIVED is subtracted from contribution
+  mode: string;
+  note: string | null;
+  href?: string;
+};
+
+export const LEDGER_KINDS: { kind: LedgerKind; label: string }[] = [
+  { kind: "FUND", label: "Put in fund" },
+  { kind: "LABOUR", label: "Labour" },
+  { kind: "MATERIAL", label: "Materials" },
+  { kind: "CONTRACT", label: "Contracts" },
+  { kind: "EXPENSE", label: "Expenses" },
+  { kind: "RECEIVED", label: "Received (kept)" },
+];
+
+/** Every single money entry of a site, tagged with the partner who paid / put it in. Newest first. */
+export async function getPartnerLedger(siteId: number): Promise<LedgerEntry[]> {
+  const [inv, lab, mat, exp, deal] = await Promise.all([
+    prisma.investment.findMany({ where: { siteId } }),
+    prisma.labourPayment.findMany({ where: { siteId }, include: { worker: { select: { id: true, name: true, role: true } } } }),
+    prisma.materialPayment.findMany({ where: { siteId }, include: { purchase: { select: { material: true, quantity: true, unit: true, supplier: true } } } }),
+    prisma.expense.findMany({ where: { siteId } }),
+    prisma.dealPayment.findMany({ where: { siteId, status: "PAID" }, include: { deal: { select: { id: true, title: true, party: true, direction: true } } } }),
+  ]);
+
+  const entries: LedgerEntry[] = [
+    ...inv.map((i) => ({
+      key: `i${i.id}`, partnerId: i.paidById, date: i.date, kind: "FUND" as const,
+      what: i.paidById ? "Put into project fund" : `Put into project fund – ${i.source}`,
+      amount: i.amount, mode: i.mode, note: i.note,
+    })),
+    ...lab.map((p) => ({
+      key: `l${p.id}`, partnerId: p.paidById, date: p.date, kind: "LABOUR" as const,
+      what: `${p.worker.name} (${p.worker.role})${p.type !== "DAILY" ? ` – ${p.type.toLowerCase()}` : ""}`,
+      amount: p.amount, mode: p.mode, note: p.note, href: `/workers/${p.worker.id}`,
+    })),
+    ...mat.map((p) => ({
+      key: `m${p.id}`, partnerId: p.paidById, date: p.date, kind: "MATERIAL" as const,
+      what: `${p.purchase.material} – ${p.purchase.quantity} ${p.purchase.unit}${p.purchase.supplier ? ` (${p.purchase.supplier})` : ""}`,
+      amount: p.amount, mode: p.mode, note: p.note, href: "/materials",
+    })),
+    ...exp.map((e) => ({
+      key: `e${e.id}`, partnerId: e.paidById, date: e.date, kind: "EXPENSE" as const,
+      what: `${e.category} – ${e.description}${e.paidTo ? ` (to ${e.paidTo})` : ""}`,
+      amount: e.amount, mode: e.mode, note: null, href: "/expenses",
+    })),
+    ...deal.map((p) => ({
+      key: `d${p.id}`, partnerId: p.paidById, date: p.date,
+      kind: (p.deal.direction === "RECEIVE" ? "RECEIVED" : "CONTRACT") as LedgerKind,
+      what: `${p.deal.title} – ${p.deal.party}`,
+      amount: p.amount, mode: p.mode, note: p.note, href: `/deals/${p.deal.id}`,
+    })),
+  ];
+
+  return entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}

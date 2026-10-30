@@ -5,25 +5,44 @@ import { addInvestment, deleteInvestment, deletePartner, savePartner } from "@/l
 import { PAYMENT_MODES, modeLabel } from "@/lib/constants";
 import { inr, prettyDate, today } from "@/lib/format";
 import { getTotals } from "@/lib/totals";
-import { getPartnerContext, getPartnerReport } from "@/lib/partners";
+import Link from "next/link";
+import { getPartnerContext, getPartnerLedger, getPartnerReport, LEDGER_KINDS } from "@/lib/partners";
 import { Badge, Bar, Card, Empty, Field, PageHeader, PaidBySelect, Select, Stat } from "@/components/ui";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 
 const COLORS = ["bg-brand-500", "bg-sky-500", "bg-violet-500", "bg-teal-500", "bg-rose-500", "bg-amber-500"];
 
-export default async function PartnersFundsPage() {
+export default async function PartnersFundsPage({ searchParams }: { searchParams: Promise<{ partner?: string; kind?: string }> }) {
+  const sp = await searchParams;
   const site = (await getCurrentSite())!;
   const me = await getCurrentUser();
   const isAdmin = me?.role === "ADMIN";
-  const [list, totals, report, ctx, users] = await Promise.all([
+  const [list, totals, report, ctx, users, ledger] = await Promise.all([
     prisma.investment.findMany({ where: { siteId: site.id }, include: { paidBy: true }, orderBy: [{ date: "desc" }, { id: "desc" }] }),
     getTotals(site.id),
     getPartnerReport(site.id),
     getPartnerContext(site.id),
     prisma.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    getPartnerLedger(site.id),
   ]);
   const { rows } = report;
   const maxNet = Math.max(1, ...rows.map((r) => r.net));
+
+  // "Who paid for what": selected partner tab ("fund" = project fund / outside money)
+  const fundEntries = ledger.filter((e) => e.partnerId === null);
+  const tabs = [
+    ...rows.map((r, i) => ({ key: String(r.id), label: r.name, color: COLORS[i % COLORS.length], entries: ledger.filter((e) => e.partnerId === r.id) })),
+    ...(fundEntries.length ? [{ key: "fund", label: "Project fund / others", color: "bg-stone-400", entries: fundEntries }] : []),
+  ];
+  const active = tabs.find((t) => t.key === sp.partner) ?? tabs[0];
+  const kindTotals = LEDGER_KINDS.map((k) => ({
+    ...k,
+    count: active?.entries.filter((e) => e.kind === k.kind).length ?? 0,
+    total: active?.entries.filter((e) => e.kind === k.kind).reduce((s, e) => s + e.amount, 0) ?? 0,
+  })).filter((k) => k.count > 0);
+  const kind = kindTotals.find((k) => k.kind === sp.kind)?.kind;
+  const shown = active ? active.entries.filter((e) => !kind || e.kind === kind) : [];
+  const tabHref = (partner: string, k?: string) => `?${new URLSearchParams({ partner, ...(k ? { kind: k } : {}) })}#details`;
 
   return (
     <>
@@ -140,6 +159,99 @@ export default async function PartnersFundsPage() {
           </>
         )}
       </Card>
+
+      {active && (
+        <div id="details" className="mb-6 scroll-mt-4">
+          <Card title="Who paid for what – every entry">
+            {/* partner tabs */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              {tabs.map((t) => {
+                const total = t.entries.reduce((s, e) => s + (e.kind === "RECEIVED" ? -e.amount : e.amount), 0);
+                const on = t.key === active.key;
+                return (
+                  <Link
+                    key={t.key}
+                    href={tabHref(t.key)}
+                    scroll={false}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${on ? "border-stone-800 bg-stone-900 text-white" : "border-stone-200 bg-white hover:bg-stone-50"}`}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-sm ${t.color}`} />
+                    <span className="font-semibold">{t.label}</span>
+                    <span className={`tabular-nums ${on ? "text-stone-300" : "text-stone-500"}`}>{inr(total)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* what the money went into */}
+            {kindTotals.length > 0 && (
+              <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                {kindTotals.map((k) => {
+                  const on = k.kind === kind;
+                  return (
+                    <Link
+                      key={k.kind}
+                      href={tabHref(active.key, on ? undefined : k.kind)}
+                      scroll={false}
+                      className={`rounded-lg border p-2.5 ${on ? "border-brand-500 bg-brand-50" : "border-stone-200 hover:bg-stone-50"}`}
+                    >
+                      <div className="text-xs text-stone-500">{k.label} · {k.count}</div>
+                      <div className={`font-bold tabular-nums ${k.kind === "RECEIVED" ? "text-stone-500" : ""}`}>
+                        {k.kind === "RECEIVED" ? "− " : ""}{inr(k.total)}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            {shown.length === 0 ? (
+              <Empty>No entries for {active.label} yet.</Empty>
+            ) : (
+              <div className="-mx-4 overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Paid for</th>
+                      <th>Mode</th>
+                      <th className="text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((e) => (
+                      <tr key={e.key}>
+                        <td className="whitespace-nowrap">{prettyDate(e.date)}</td>
+                        <td className="whitespace-nowrap"><Badge>{LEDGER_KINDS.find((k) => k.kind === e.kind)?.label}</Badge></td>
+                        <td>
+                          {e.href ? <Link href={e.href} className="font-medium hover:underline">{e.what}</Link> : <span className="font-medium">{e.what}</span>}
+                          {e.note && <div className="text-xs text-stone-500">{e.note}</div>}
+                        </td>
+                        <td><Badge tone={e.mode}>{modeLabel(e.mode)}</Badge></td>
+                        <td className={`text-right font-semibold tabular-nums ${e.kind === "RECEIVED" ? "text-stone-500" : ""}`}>
+                          {e.kind === "RECEIVED" ? "− " : ""}{inr(e.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4} className="font-semibold">{kind ? kindTotals.find((k) => k.kind === kind)?.label : "Total"} ({shown.length} entries)</td>
+                      <td className="text-right font-bold tabular-nums">
+                        {inr(shown.reduce((s, e) => s + (e.kind === "RECEIVED" ? -e.amount : e.amount), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            {active.key === "fund" && (
+              <p className="mt-3 text-xs text-stone-500">These were paid from the common project fund (or money from outside, like a loan), so they are not counted for any one partner.</p>
+            )}
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
