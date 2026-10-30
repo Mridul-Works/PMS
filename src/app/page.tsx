@@ -199,11 +199,6 @@ export default async function Dashboard() {
                   </div>
                 ))}
               </div>
-              {partners.settlements.map((s, i) => (
-                <p key={i} className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                  {s.from} owes {s.to} {inr(s.amount)} to match shares
-                </p>
-              ))}
             </Card>
           )}
 

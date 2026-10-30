@@ -84,7 +84,6 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
                     <th className="text-right">Received (kept)</th>
                     <th className="text-right">Net contribution</th>
                     <th className="text-right">Agreed share</th>
-                    <th className="text-right">vs share</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -120,10 +119,6 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
                         </td>
                         <td className="text-right tabular-nums">
                           {report.sharesSet ? `${r.sharePct}%` : <span className="text-stone-400">equal</span>}
-                          <div className="text-xs text-stone-500">{inr(r.expected)}</div>
-                        </td>
-                        <td className={`text-right font-semibold tabular-nums ${r.diff > 1 ? "text-emerald-600" : r.diff < -1 ? "text-rose-600" : "text-stone-500"}`}>
-                          {Math.abs(r.diff) <= 1 ? "even" : r.diff > 0 ? `+${inr(r.diff)}` : `−${inr(-r.diff)}`}
                         </td>
                       </tr>
                     );
@@ -141,23 +136,6 @@ export default async function PartnersFundsPage({ searchParams }: { searchParams
               )}
             </div>
 
-            <div className="mt-4 rounded-lg bg-stone-50 p-3 text-sm">
-              <div className="mb-1 font-semibold">Settle up</div>
-              {report.settlements.length === 0 ? (
-                <p className="text-stone-600">Everyone is even as per the agreed shares. 👍</p>
-              ) : (
-                <ul className="space-y-1">
-                  {report.settlements.map((s, i) => (
-                    <li key={i}>
-                      <b>{s.from}</b> should give <b>{s.to}</b> <b className="text-brand-700">{inr(s.amount)}</b> to match the agreed shares
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {report.sharesSet && Math.abs(report.shareTotal - 100) > 0.01 && (
-                <p className="mt-1 text-xs text-amber-700">Note: shares add up to {report.shareTotal}%, not 100% – they are scaled proportionally.</p>
-              )}
-            </div>
             <p className="mt-3 text-xs text-stone-500">
               <b>Net contribution</b> = money put into the project fund + payments made from own pocket − money received from clients that the partner kept.
               Payments marked “Project fund” are not counted for anyone, because that money was already counted when it was put in.
