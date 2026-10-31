@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { UpiPay, type UpiInfo } from "./UpiPay";
 
 type Opt = { value: string; label: string };
 
@@ -119,6 +120,29 @@ export const MODE_BUTTONS = [
   { value: "BANK", label: "Bank" },
 ] as const;
 
-export function ModeChoice({ label = "Paid via", defaultValue = "CASH" }: { label?: string; defaultValue?: string }) {
-  return <Choice name="mode" label={label} options={MODE_BUTTONS} defaultValue={defaultValue} remember="mode" />;
+/**
+ * Cash / GPay / Bank buttons (last choice remembered).
+ * With `upi`, picking GPay shows "Pay now in Google Pay / Already paid" for that payee.
+ */
+export function ModeChoice({ label = "Paid via", defaultValue = "CASH", upi }: { label?: string; defaultValue?: string; upi?: UpiInfo }) {
+  const [mode, setMode] = useState(defaultValue);
+  useEffect(() => {
+    const saved = store.get("mode");
+    if (saved && MODE_BUTTONS.some((o) => o.value === saved)) setMode(saved);
+  }, []);
+  return (
+    <div className="space-y-2">
+      <Choice
+        name="mode"
+        label={label}
+        options={MODE_BUTTONS}
+        value={mode}
+        onChange={(v) => {
+          setMode(v);
+          store.set("mode", v);
+        }}
+      />
+      {upi && mode === "GPAY" && <UpiPay {...upi} />}
+    </div>
+  );
 }

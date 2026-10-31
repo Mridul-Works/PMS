@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentSite } from "@/lib/site";
-import { deleteMaterialPayment, payMaterialDue, paySupplier } from "@/lib/actions";
+import { deleteMaterialPayment, payMaterialDue, paySupplier, savePayee } from "@/lib/actions";
 import { modeLabel } from "@/lib/constants";
 import { dealSummary } from "@/lib/calc";
 import { inr, num, prettyDate, today } from "@/lib/format";
@@ -18,7 +18,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ name:
   const site = (await getCurrentSite())!;
   const t = today();
 
-  const [bills, deals, ctx] = await Promise.all([
+  const [bills, deals, ctx, payee] = await Promise.all([
     prisma.materialPurchase.findMany({
       where: { siteId: site.id, supplier: supplier ? { equals: supplier, mode: "insensitive" } : null },
       include: { payments: { include: { paidBy: true, createdBy: { select: { name: true } } }, orderBy: [{ date: "asc" }, { id: "asc" }] } },
@@ -28,7 +28,9 @@ export default async function SupplierPage({ params }: { params: Promise<{ name:
       ? prisma.deal.findMany({ where: { siteId: site.id, party: { equals: supplier, mode: "insensitive" } }, include: { payments: true }, orderBy: { date: "desc" } })
       : Promise.resolve([]),
     getPartnerContext(site.id),
+    supplier ? prisma.payee.findUnique({ where: { siteId_key: { siteId: site.id, key: supplier.trim().toLowerCase() } } }) : Promise.resolve(null),
   ]);
+  const upi = supplier ? { payee: supplier, upiId: payee?.upiId ?? null } : undefined;
 
   const title = supplier ?? "Purchases without a supplier";
   const billed = bills.reduce((s, b) => s + b.total, 0);
@@ -138,7 +140,7 @@ export default async function SupplierPage({ params }: { params: Promise<{ name:
                             <div className="sm:col-span-2">
                               <AmountField key={b.payments.length} name="amount" label="Amount (₹ or % of bill)" total={b.total} remaining={bDue} required />
                             </div>
-                            <div className="sm:col-span-2"><ModeChoice /></div>
+                            <div className="sm:col-span-2"><ModeChoice upi={upi && { ...upi, purpose: `${b.material} bill` }} /></div>
                             <div className="sm:col-span-2"><PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} /></div>
                             <Field label="Date"><input name="date" type="date" defaultValue={t} className="input" /></Field>
                             <Field label="Note"><input name="note" className="input" /></Field>
@@ -182,13 +184,29 @@ export default async function SupplierPage({ params }: { params: Promise<{ name:
               <form action={paySupplier} className="space-y-3">
                 <input type="hidden" name="supplier" value={supplier ?? NO_SUPPLIER} />
                 <AmountField key={timeline.length} name="amount" label="Amount (₹)" total={due} remaining={due} quick={[]} required />
-                <ModeChoice />
+                <ModeChoice upi={upi && { ...upi, purpose: "Material dues" }} />
                 <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
                 <Field label="Date"><input name="date" type="date" defaultValue={t} className="input" /></Field>
                 <Field label="Note"><input name="note" className="input" /></Field>
                 <SubmitButton>Save payment</SubmitButton>
               </form>
               <p className="mt-3 text-xs text-stone-500">The amount is adjusted against the oldest unpaid bills first. To pay one particular bill, use “Pay this bill” on it.</p>
+            </Card>
+          )}
+
+          {supplier && (
+            <Card title="UPI / contact">
+              <form action={savePayee} className="space-y-3">
+                <input type="hidden" name="name" value={supplier} />
+                <Field label="UPI ID (for Google Pay)">
+                  <input name="upiId" defaultValue={payee?.upiId ?? ""} placeholder="e.g. 98765xxxxx@ybl" autoCapitalize="none" className="input" />
+                </Field>
+                <Field label="Phone">
+                  <input name="phone" type="tel" defaultValue={payee?.phone ?? ""} className="input" />
+                </Field>
+                <SubmitButton className="btn-ghost">Save</SubmitButton>
+              </form>
+              <p className="mt-2 text-xs text-stone-500">Saved here, “Pay now in GPay” fills it in. It is also saved when you pay by GPay once.</p>
             </Card>
           )}
 

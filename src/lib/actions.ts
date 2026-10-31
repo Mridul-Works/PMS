@@ -49,6 +49,28 @@ async function who(f: FormData, sid: number) {
   return { paidById, createdById: user?.id ?? null };
 }
 
+const UPI_RE = /^[\w.\-]{2,256}@[a-zA-Z][a-zA-Z0-9.\-]{1,64}$/;
+
+/** Note with the UPI ref / UTR no. (from the Google Pay box) added, if one was typed. */
+function noteOf(f: FormData, base?: string | null) {
+  const ref = str(f, "upiRef");
+  const parts = [base === undefined ? str(f, "note") : base, ref && `UPI ref ${ref}`].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+/** Save the UPI ID typed in the Google Pay box to the worker / supplier, for next time. */
+async function rememberUpi(f: FormData, sid: number, to: { workerId?: number; name?: string | null }) {
+  const upiId = str(f, "upiId");
+  if (!UPI_RE.test(upiId)) return;
+  if (to.workerId) {
+    await prisma.worker.updateMany({ where: { id: to.workerId, siteId: sid }, data: { upiId } });
+  } else if (to.name && to.name.trim() && to.name !== "-") {
+    const name = to.name.trim();
+    const key = name.toLowerCase();
+    await prisma.payee.upsert({ where: { siteId_key: { siteId: sid, key } }, create: { siteId: sid, name, key, upiId }, update: { upiId } });
+  }
+}
+
 async function siteId() {
   const site = await getCurrentSite();
   if (!site) redirect("/sites");
@@ -95,6 +117,7 @@ export async function saveWorker(f: FormData) {
   const data = {
     name: str(f, "name"),
     phone: optStr(f, "phone"),
+    ...(f.has("upiId") ? { upiId: UPI_RE.test(str(f, "upiId")) ? str(f, "upiId") : null } : {}),
     role: str(f, "role") || "Labour",
     dailyWage: numVal(f, "dailyWage"),
     notes: optStr(f, "notes"),
@@ -153,10 +176,11 @@ export async function addLabourPayment(f: FormData) {
       date: dateVal(f),
       type: str(f, "type") || "DAILY",
       mode: str(f, "mode") || "CASH",
-      note: optStr(f, "note"),
+      note: noteOf(f),
       ...(await who(f, sid)),
     },
   });
+  await rememberUpi(f, sid, { workerId });
   refresh();
 }
 
@@ -194,7 +218,8 @@ export async function addMaterial(f: FormData) {
     },
   });
   if (paid > 0)
-    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: "At purchase", ...(await who(f, sid)) } });
+    await prisma.materialPayment.create({ data: { siteId: sid, purchaseId: purchase.id, date, amount: paid, mode, note: noteOf(f, "At purchase"), ...(await who(f, sid)) } });
+  await rememberUpi(f, sid, { name: purchase.supplier });
   refresh();
 }
 
@@ -207,10 +232,11 @@ export async function payMaterialDue(f: FormData) {
   if (amount <= 0) return;
   await prisma.$transaction([
     prisma.materialPayment.create({
-      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: optStr(f, "note"), ...(await who(f, m.siteId)) },
+      data: { siteId: m.siteId, purchaseId: id, date: dateVal(f), amount, mode: str(f, "mode") || "CASH", note: noteOf(f), ...(await who(f, m.siteId)) },
     }),
     prisma.materialPurchase.update({ where: { id }, data: { paid: m.paid + amount } }),
   ]);
+  await rememberUpi(f, m.siteId, { name: m.supplier });
   refresh();
 }
 
@@ -231,7 +257,7 @@ export async function paySupplier(f: FormData) {
   const w = await who(f, sid);
   const date = dateVal(f);
   const mode = str(f, "mode") || "CASH";
-  const note = optStr(f, "note");
+  const note = noteOf(f);
   const ops = [];
   for (const b of bills) {
     const due = Math.round((b.total - b.paid) * 100) / 100;
@@ -244,6 +270,7 @@ export async function paySupplier(f: FormData) {
     );
   }
   if (ops.length) await prisma.$transaction(ops);
+  await rememberUpi(f, sid, { name: supplier });
   refresh();
 }
 
@@ -272,7 +299,7 @@ export async function addExpense(f: FormData) {
       siteId: sid,
       date: dateVal(f),
       category: str(f, "category") || "Miscellaneous",
-      description: str(f, "description") || str(f, "category"),
+      description: noteOf(f, str(f, "description") || str(f, "category")) ?? str(f, "category"),
       amount,
       mode: str(f, "mode") || "CASH",
       paidTo: optStr(f, "paidTo"),
@@ -402,10 +429,11 @@ export async function addDealPayment(f: FormData) {
       amount,
       mode: str(f, "mode") || "CASH",
       status: str(f, "status") === "PLANNED" ? "PLANNED" : "PAID",
-      note: optStr(f, "note"),
+      note: noteOf(f),
       ...(await who(f, deal.siteId)),
     },
   });
+  if (deal.direction === "PAY") await rememberUpi(f, deal.siteId, { name: deal.party });
   await clearPlannedIfSettled(deal.id);
   refresh();
 }
@@ -414,7 +442,10 @@ export async function addDealPayment(f: FormData) {
 export async function completeDealPayment(f: FormData) {
   const id = numVal(f, "id");
   const amount = numVal(f, "amount");
-  const existing = await prisma.dealPayment.findUnique({ where: { id }, select: { siteId: true, createdById: true } });
+  const existing = await prisma.dealPayment.findUnique({
+    where: { id },
+    select: { siteId: true, createdById: true, note: true, deal: { select: { direction: true, party: true } } },
+  });
   if (!existing) return;
   const w = await who(f, existing.siteId);
   const p = await prisma.dealPayment.update({
@@ -425,10 +456,24 @@ export async function completeDealPayment(f: FormData) {
       mode: str(f, "mode") || "CASH",
       paidById: w.paidById,
       createdById: existing.createdById ?? w.createdById,
+      ...(str(f, "upiRef") ? { note: noteOf(f, existing.note) } : {}),
       ...(amount > 0 ? { amount } : {}),
     },
   });
+  if (existing.deal.direction === "PAY") await rememberUpi(f, existing.siteId, { name: existing.deal.party });
   await clearPlannedIfSettled(p.dealId);
+  refresh();
+}
+
+/** Save a supplier's / party's UPI ID and phone (supplier page). */
+export async function savePayee(f: FormData) {
+  const sid = await siteId();
+  const name = str(f, "name");
+  if (!name || name === "-") return;
+  const raw = str(f, "upiId");
+  const data = { upiId: UPI_RE.test(raw) ? raw : null, phone: optStr(f, "phone") };
+  const key = name.toLowerCase();
+  await prisma.payee.upsert({ where: { siteId_key: { siteId: sid, key } }, create: { siteId: sid, name, key, ...data }, update: data });
   refresh();
 }
 

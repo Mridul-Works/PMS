@@ -7,6 +7,7 @@ import { DEAL_CATEGORIES_PAY, DEAL_CATEGORIES_RECEIVE, modeLabel } from "@/lib/c
 import { inr, prettyDate, today } from "@/lib/format";
 import { Badge, ByTag, Card, Empty, Field, PageHeader, Select, Stat } from "@/components/ui";
 import { Choice, ModeChoice, PaidByChoice } from "@/components/Choice";
+import { getPayeeUpi, upiFor } from "@/lib/payees";
 import { getPartnerContext } from "@/lib/partners";
 import { DeleteButton, SubmitButton } from "@/components/buttons";
 import { AmountField } from "@/components/AmountField";
@@ -20,8 +21,10 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
   if (!deal) notFound();
   const t = today();
   const ctx = await getPartnerContext(deal.siteId);
+
   const s = dealSummary(deal, t);
   const pay = deal.direction === "PAY";
+  const upi = pay ? { payee: deal.party, upiId: upiFor(await getPayeeUpi(deal.siteId), deal.party), purpose: deal.title } : undefined;
   const verb = pay ? "Paid" : "Received";
   const done = deal.payments.filter((p) => p.status === "PAID");
   const planned = deal.payments.filter((p) => p.status === "PLANNED");
@@ -156,7 +159,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
                                 <input name="date" type="date" defaultValue={t} className="input" />
                               </Field>
                             </div>
-                            <ModeChoice label="Mode" defaultValue={p.mode} />
+                            <ModeChoice label="Mode" defaultValue={p.mode} upi={upi} />
                             <PaidByChoice
                               partners={ctx.partners}
                               defaultId={p.paidById ?? ctx.defaultId}
@@ -195,7 +198,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
               <Field label="Date / due date">
                 <input name="date" type="date" defaultValue={t} className="input" />
               </Field>
-              <ModeChoice label="Mode" />
+              <ModeChoice label="Mode" upi={upi} />
               <PaidByChoice
                 partners={ctx.partners}
                 defaultId={ctx.defaultId}

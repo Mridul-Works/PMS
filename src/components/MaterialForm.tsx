@@ -12,11 +12,14 @@ const fmt = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 export function MaterialForm({
   today,
   suppliers,
+  upiIds = {},
   partners,
   defaultPartnerId,
 }: {
   today: string;
   suppliers: string[];
+  /** saved UPI IDs, keyed by lower-case supplier name */
+  upiIds?: Record<string, string>;
   partners: { id: number; name: string }[];
   defaultPartnerId?: number;
 }) {
@@ -117,7 +120,14 @@ export function MaterialForm({
         {needSupplier && <span className="mt-1 block text-xs text-rose-600">Needed because {fmt(stillDue)} stays due</span>}
       </label>
 
-      <ModeChoice />
+      <ModeChoice
+        upi={{
+          payee: supplier.trim() || null,
+          upiId: upiIds[supplier.trim().toLowerCase()] ?? null,
+          amount: paidNum > 0 ? paidNum : undefined,
+          purpose: `${material === "Other" ? "Material" : material} bill`,
+        }}
+      />
       <PaidByChoice partners={partners} defaultId={defaultPartnerId} />
 
       <details className="rounded-lg border border-stone-200 px-3 py-2">

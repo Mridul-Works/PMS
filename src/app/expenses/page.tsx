@@ -104,7 +104,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             <Field label="Amount (₹) *">
               <input name="amount" type="number" inputMode="decimal" min="1" step="any" required className="input min-h-11 text-base sm:min-h-0 sm:text-sm" />
             </Field>
-            <ModeChoice />
+            <ModeChoice upi={{ purpose: "Expense" }} />
             <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
             <Field label="Description">
               <input name="description" className="input" placeholder="optional – category is enough" />

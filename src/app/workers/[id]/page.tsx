@@ -150,7 +150,7 @@ export default async function WorkerPage({
                   { value: "SETTLEMENT", label: "Settlement" },
                 ]}
               />
-              <ModeChoice />
+              <ModeChoice upi={{ payee: worker.name, upiId: worker.upiId, purpose: "Wages" }} />
               <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
               <details className="text-sm">
                 <summary className="cursor-pointer py-1 text-stone-600">More details</summary>
@@ -175,6 +175,9 @@ export default async function WorkerPage({
               </Field>
               <Field label="Phone">
                 <input name="phone" defaultValue={worker.phone ?? ""} className="input" />
+              </Field>
+              <Field label="UPI ID (for Google Pay)">
+                <input name="upiId" defaultValue={worker.upiId ?? ""} placeholder="e.g. 98765xxxxx@ybl" autoCapitalize="none" className="input" />
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Role">

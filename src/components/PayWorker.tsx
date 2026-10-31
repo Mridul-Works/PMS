@@ -5,7 +5,7 @@ import { addLabourPayment } from "@/lib/actions";
 import { Choice, ModeChoice, PaidByChoice } from "./Choice";
 import { SubmitButton } from "./buttons";
 
-export type PayWorkerRow = { id: number; name: string; role: string; dailyWage: number; due: number };
+export type PayWorkerRow = { id: number; name: string; role: string; dailyWage: number; due: number; upiId?: string | null };
 
 const TYPES = [
   { value: "DAILY", label: "Wages" },
@@ -121,7 +121,7 @@ export function PayWorker({
             />
           </label>
           <Choice name="type" label="Type" options={TYPES} value={type} onChange={setType} />
-          <ModeChoice />
+          <ModeChoice upi={{ payee: sel.name, upiId: sel.upiId, amount: amt, purpose: type === "ADVANCE" ? "Advance" : "Wages" }} />
           <PaidByChoice partners={partners} defaultId={defaultPartnerId} />
           <details className="text-sm">
             <summary className="cursor-pointer py-1 text-stone-600">More details</summary>

@@ -51,6 +51,8 @@ export function AmountField({
           className="input min-h-11 min-w-0 flex-1 rounded-r-none sm:min-h-0"
         />
         <input type="hidden" name={`${name}Unit`} value={unit} />
+        {/* rupee value for other widgets (e.g. Google Pay button); not submitted */}
+        <input type="hidden" data-rupees={name} value={rupees ? String(Math.round(rupees * 100) / 100) : ""} />
         <div className="flex shrink-0 overflow-hidden rounded-r-lg border border-l-0 border-stone-300 text-sm">
           {(["RS", "PCT"] as const).map((u) => (
             <button

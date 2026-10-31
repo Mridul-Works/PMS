@@ -79,7 +79,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
               <Empty>No workers yet.</Empty>
             ) : (
               <PayWorker
-                workers={rows.map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, due: bal.get(w.id)?.balance ?? 0 }))}
+                workers={rows.map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, upiId: w.upiId, due: bal.get(w.id)?.balance ?? 0 }))}
                 partners={ctx.partners}
                 defaultPartnerId={ctx.defaultId}
                 date={date}

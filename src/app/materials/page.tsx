@@ -9,6 +9,7 @@ import { getPartnerContext } from "@/lib/partners";
 import { supplierHref } from "@/lib/links";
 import { DeleteButton } from "@/components/buttons";
 import { MaterialForm } from "@/components/MaterialForm";
+import { getPayeeUpi, upiFor } from "@/lib/payees";
 import { AmountField } from "@/components/AmountField";
 import { ModeChoice, PaidByChoice } from "@/components/Choice";
 
@@ -42,6 +43,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
   const dues = new Map<string, number>();
   for (const m of all) if (m.total - m.paid > 0.5) dues.set(m.supplier || "Unknown", (dues.get(m.supplier || "Unknown") ?? 0) + m.total - m.paid);
   const suppliers = [...new Set(all.map((m) => m.supplier).filter(Boolean) as string[])];
+  const upiIds = await getPayeeUpi(site.id);
 
   return (
     <>
@@ -140,7 +142,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
                                 <form action={payMaterialDue} className="mt-2 space-y-2 rounded-lg bg-stone-50 p-2">
                                   <input type="hidden" name="id" value={m.id} />
                                   <AmountField key={m.payments.length} name="amount" label="Pay now (₹ or % of bill)" total={m.total} remaining={due} required />
-                                  <ModeChoice />
+                                  <ModeChoice upi={{ payee: m.supplier, upiId: upiFor(upiIds, m.supplier), purpose: `${m.material} bill` }} />
                                   <PaidByChoice partners={ctx.partners} defaultId={ctx.defaultId} />
                                   <div className="flex gap-2">
                                     <input name="date" type="date" defaultValue={today()} className="input min-h-11 w-auto sm:min-h-0" aria-label="Date" />
@@ -168,7 +170,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
 
         <div className="space-y-6">
           <Card id="add" title="Add purchase">
-            <MaterialForm today={today()} suppliers={suppliers} partners={ctx.partners} defaultPartnerId={ctx.defaultId} />
+            <MaterialForm today={today()} suppliers={suppliers} upiIds={upiIds} partners={ctx.partners} defaultPartnerId={ctx.defaultId} />
           </Card>
           {dues.size > 0 && (
             <Card title="Supplier dues" action={<Link href="/dues?type=SUPPLIER" className="text-xs text-brand-700 hover:underline">All dues →</Link>}>

@@ -31,6 +31,20 @@ model Site {
   dealPayments     DealPayment[]
   materialPayments MaterialPayment[]
   partners         Partner[]
+  payees           Payee[]
+}
+
+// Saved UPI details of a supplier / contractor / party, matched by name (case-insensitive)
+model Payee {
+  id     Int     @id @default(autoincrement())
+  siteId Int
+  site   Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  name   String
+  key    String // lower-case name
+  upiId  String?
+  phone  String?
+
+  @@unique([siteId, key])
 }
 
 model Worker {
@@ -39,6 +53,7 @@ model Worker {
   site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
   name      String
   phone     String?
+  upiId     String? // for "Pay now in Google Pay"
   role      String   @default("Labour") // Mistri, Labour, Helper, Carpenter...
   dailyWage Float
   active    Boolean  @default(true)

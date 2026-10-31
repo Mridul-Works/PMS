@@ -41,7 +41,7 @@ export default async function PaymentsPage({
   const bal = workerBalances(workers, allAtt, allPay);
   const payRows = workers
     .filter((w) => w.active || (bal.get(w.id)?.balance ?? 0) > 0.5)
-    .map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, due: bal.get(w.id)?.balance ?? 0 }));
+    .map((w) => ({ id: w.id, name: w.name, role: w.role, dailyWage: w.dailyWage, upiId: w.upiId, due: bal.get(w.id)?.balance ?? 0 }));
 
   const total = payments.reduce((s, p) => s + p.amount, 0);
   const byMode = (m: string) => payments.filter((p) => p.mode === m).reduce((s, p) => s + p.amount, 0);
